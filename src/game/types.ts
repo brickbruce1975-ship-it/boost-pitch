@@ -1,9 +1,20 @@
 export type Vec3 = { x: number; y: number; z: number };
 
+export type Livery = "brick" | "cyan" | "amber" | "slate";
+
+export const BRICK_BRUCE = {
+  name: "Brick Bruce",
+  livery: "brick" as const,
+};
+
 export type Car = {
   id: number;
+  peerId: string;
   team: 0 | 1;
   isPlayer: boolean;
+  remote: boolean;
+  name: string;
+  livery: Livery;
   pos: Vec3;
   vel: Vec3;
   yaw: number;
@@ -29,6 +40,15 @@ export type BoostPad = {
 
 export type Phase = "menu" | "countdown" | "play" | "goal" | "over";
 
+export type RosterEntry = {
+  peerId: string;
+  name: string;
+  livery: Livery;
+  team: 0 | 1;
+  isLocal: boolean;
+  remote: boolean;
+};
+
 export type Snapshot = {
   score: [number, number];
   clock: number;
@@ -40,6 +60,9 @@ export type Snapshot = {
   countdown: number;
   onGround: boolean;
   yaw: number;
+  localName: string;
+  roster: { name: string; team: 0 | 1; livery: Livery; peerId: string }[];
+  lastNudgeBits: string;
 };
 
 export type Actions = {
@@ -50,6 +73,7 @@ export type Actions = {
   jump: boolean;
 };
 
+/** Unity / C# mirror these exactly. Source of truth for BoostPitch.Sim. */
 export const FIELD = {
   halfW: 40,
   halfL: 56,
@@ -64,3 +88,4 @@ export const CAR_R = 1.12;
 export const CAR_H = 0.42;
 export const DT = 1 / 120;
 export const MATCH_SECONDS = 180;
+export const MAX_CARS = 8;

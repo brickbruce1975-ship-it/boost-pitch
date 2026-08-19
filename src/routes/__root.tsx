@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#071018" },
       {
         name: "description",
-        content: "Boost Pitch — original arena car soccer in the browser. Boost, jump, aerial, score.",
+        content: "Boost Pitch — original arena car soccer. Drive as Brick Bruce. Solo vs AI or casual P2P with friends.",
       },
     ],
     links: [

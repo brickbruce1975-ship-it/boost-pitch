@@ -9,9 +9,13 @@ import {
   type Ball,
   type BoostPad,
   type Car,
+  type Livery,
   type Phase,
+  type RosterEntry,
   type Snapshot,
+  BRICK_BRUCE,
 } from "./types";
+import { sampleKickoffImpulse } from "./quantumKickoff";
 
 const GRAVITY = 34;
 const BALL_G = 30;
@@ -43,19 +47,32 @@ export type World = {
   lastGoal: 0 | 1 | null;
   countdown: number;
   phaseT: number;
+  roster: RosterEntry[];
+  lastNudgeBits: string;
 };
 
 function v(x = 0, y = 0, z = 0) {
   return { x, y, z };
 }
 
-function kickoffCar(id: number, team: 0 | 1, isPlayer: boolean): Car {
+function kickoffCar(
+  id: number,
+  team: 0 | 1,
+  isPlayer: boolean,
+  extra?: { name?: string; livery?: Livery; peerId?: string; remote?: boolean },
+): Car {
+  const slot = team === 0 ? id : id;
+  const lane = ((slot % 3) - 1) * 6;
   const z = team === 0 ? 24 : -24;
   return {
     id,
+    peerId: extra?.peerId ?? `local-${id}`,
     team,
     isPlayer,
-    pos: v(isPlayer ? 0 : team === 0 ? 6 : -6, CAR_H, z),
+    remote: extra?.remote ?? false,
+    name: extra?.name ?? (isPlayer ? BRICK_BRUCE.name : "Amber Bot"),
+    livery: extra?.livery ?? (isPlayer ? BRICK_BRUCE.livery : "amber"),
+    pos: v(lane, CAR_H, z),
     vel: v(),
     yaw: team === 0 ? 0 : Math.PI,
     pitch: 0,
@@ -89,9 +106,28 @@ function makePads(): BoostPad[] {
   ];
 }
 
+export function defaultSoloRoster(name = BRICK_BRUCE.name, livery: Livery = BRICK_BRUCE.livery): RosterEntry[] {
+  return [
+    { peerId: "local-0", name, livery, team: 0, isLocal: true, remote: false },
+    { peerId: "bot-1", name: "Amber Bot", livery: "amber", team: 1, isLocal: false, remote: false },
+  ];
+}
+
+export function carsFromRoster(roster: RosterEntry[]): Car[] {
+  return roster.map((r, i) =>
+    kickoffCar(i, r.team, r.isLocal, {
+      name: r.name,
+      livery: r.livery,
+      peerId: r.peerId,
+      remote: r.remote,
+    }),
+  );
+}
+
 export function createWorld(): World {
+  const roster = defaultSoloRoster();
   return {
-    cars: [kickoffCar(0, 0, true), kickoffCar(1, 1, false)],
+    cars: carsFromRoster(roster),
     ball: { pos: v(0, BALL_R + 0.05, 0), vel: v() },
     pads: makePads(),
     score: [0, 0],
@@ -101,12 +137,17 @@ export function createWorld(): World {
     lastGoal: null,
     countdown: 3,
     phaseT: 0,
+    roster,
+    lastNudgeBits: "00",
   };
 }
 
-export function resetKickoff(w: World) {
-  w.cars = [kickoffCar(0, 0, true), kickoffCar(1, 1, false)];
-  w.ball = { pos: v(0, BALL_R + 0.05, 0), vel: v() };
+export function resetKickoff(w: World, roster = w.roster) {
+  w.roster = roster;
+  w.cars = carsFromRoster(roster);
+  const nudge = sampleKickoffImpulse((Date.now() ^ (w.score[0] * 17 + w.score[1] * 31)) >>> 0);
+  w.lastNudgeBits = nudge.bits;
+  w.ball = { pos: v(0, BALL_R + 0.05, 0), vel: v(nudge.vx, 0, nudge.vz) };
 }
 
 function carForward(car: Car) {
@@ -389,8 +430,16 @@ function checkGoal(w: World): 0 | 1 | null {
   return null;
 }
 
-export function stepWorld(w: World, player: Actions, dt: number) {
+export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOnly?: boolean }) {
   if (w.phase === "menu" || w.phase === "over") return;
+  if (opts?.carsOnly) {
+    for (const car of w.cars) {
+      if (car.remote) continue;
+      const a = car.isPlayer ? player : botActions(w, car);
+      stepCar(car, a, dt);
+    }
+    return;
+  }
   w.phaseT += dt;
 
   if (w.phase === "countdown") {
@@ -436,11 +485,14 @@ export function stepWorld(w: World, player: Actions, dt: number) {
   }
 
   for (const car of w.cars) {
+    if (car.remote) continue;
     const a = car.isPlayer ? player : botActions(w, car);
     stepCar(car, a, dt);
   }
   stepBall(w.ball, dt);
-  collideCars(w.cars[0], w.cars[1]);
+  for (let i = 0; i < w.cars.length; i++) {
+    for (let j = i + 1; j < w.cars.length; j++) collideCars(w.cars[i], w.cars[j]);
+  }
   for (const car of w.cars) collideCarBall(car, w.ball);
   collectPads(w, dt);
 
@@ -458,27 +510,125 @@ export function stepWorld(w: World, player: Actions, dt: number) {
 }
 
 export function snapshot(w: World): Snapshot {
-  const p = w.cars[0];
+  const p = w.cars.find((c) => c.isPlayer) ?? w.cars[0];
   return {
     score: [w.score[0], w.score[1]],
     clock: w.clock,
     overtime: w.overtime,
-    boost: p.boost,
-    speed: Math.hypot(p.vel.x, p.vel.y, p.vel.z),
+    boost: p?.boost ?? 0,
+    speed: p ? Math.hypot(p.vel.x, p.vel.y, p.vel.z) : 0,
     phase: w.phase,
     lastGoal: w.lastGoal,
     countdown: w.countdown,
-    onGround: p.onGround,
-    yaw: p.yaw,
+    onGround: p?.onGround ?? true,
+    yaw: p?.yaw ?? 0,
+    localName: p?.name ?? BRICK_BRUCE.name,
+    roster: w.cars.map((c) => ({
+      name: c.name,
+      team: c.team,
+      livery: c.livery,
+      peerId: c.peerId,
+    })),
+    lastNudgeBits: w.lastNudgeBits,
   };
 }
 
-export function startMatch(w: World) {
+export function startMatch(w: World, roster?: RosterEntry[]) {
   w.score = [0, 0];
   w.clock = MATCH_SECONDS;
   w.overtime = false;
   w.lastGoal = null;
-  resetKickoff(w);
+  resetKickoff(w, roster ?? w.roster);
   w.phase = "countdown";
   w.phaseT = 0;
+}
+
+export type CarWire = {
+  peerId: string;
+  name: string;
+  livery: Livery;
+  team: 0 | 1;
+  pos: { x: number; y: number; z: number };
+  vel: { x: number; y: number; z: number };
+  yaw: number;
+  pitch: number;
+  boost: number;
+  boosting: boolean;
+  onGround: boolean;
+};
+
+export type HostWire = {
+  ball: Ball;
+  score: [number, number];
+  clock: number;
+  overtime: boolean;
+  phase: Phase;
+  countdown: number;
+  lastGoal: 0 | 1 | null;
+  lastNudgeBits: string;
+};
+
+export function carToWire(car: Car): CarWire {
+  return {
+    peerId: car.peerId,
+    name: car.name,
+    livery: car.livery,
+    team: car.team,
+    pos: { ...car.pos },
+    vel: { ...car.vel },
+    yaw: car.yaw,
+    pitch: car.pitch,
+    boost: car.boost,
+    boosting: car.boosting,
+    onGround: car.onGround,
+  };
+}
+
+export function applyCarWire(car: Car, wire: CarWire) {
+  car.pos.x = wire.pos.x;
+  car.pos.y = wire.pos.y;
+  car.pos.z = wire.pos.z;
+  car.vel.x = wire.vel.x;
+  car.vel.y = wire.vel.y;
+  car.vel.z = wire.vel.z;
+  car.yaw = wire.yaw;
+  car.pitch = wire.pitch;
+  car.boost = wire.boost;
+  car.boosting = wire.boosting;
+  car.onGround = wire.onGround;
+  car.name = wire.name;
+  car.livery = wire.livery;
+  car.team = wire.team;
+}
+
+export function applyHostWire(w: World, host: HostWire) {
+  w.ball.pos = { ...host.ball.pos };
+  w.ball.vel = { ...host.ball.vel };
+  w.score = [host.score[0], host.score[1]];
+  w.clock = host.clock;
+  w.overtime = host.overtime;
+  w.phase = host.phase;
+  w.countdown = host.countdown;
+  w.lastGoal = host.lastGoal;
+  w.lastNudgeBits = host.lastNudgeBits;
+}
+
+export function hostWireFrom(w: World): HostWire {
+  return {
+    ball: { pos: { ...w.ball.pos }, vel: { ...w.ball.vel } },
+    score: [w.score[0], w.score[1]],
+    clock: w.clock,
+    overtime: w.overtime,
+    phase: w.phase,
+    countdown: w.countdown,
+    lastGoal: w.lastGoal,
+    lastNudgeBits: w.lastNudgeBits,
+  };
+}
+
+export function assignTeams(ids: string[]): Map<string, 0 | 1> {
+  const sorted = [...ids].sort();
+  const map = new Map<string, 0 | 1>();
+  sorted.forEach((id, i) => map.set(id, (i % 2) as 0 | 1));
+  return map;
 }

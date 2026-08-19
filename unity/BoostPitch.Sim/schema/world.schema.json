@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BoostPitch.WorldSnapshot",
+  "type": "object",
+  "required": ["cars", "ball", "scoreCyan", "scoreAmber", "clock", "phase"],
+  "properties": {
+    "cars": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["peerId", "name", "team", "pos", "vel", "yaw"],
+        "properties": {
+          "peerId": { "type": "string" },
+          "name": { "type": "string" },
+          "livery": { "enum": ["brick", "cyan", "amber", "slate"] },
+          "team": { "enum": [0, 1] },
+          "pos": { "$ref": "#/$defs/vec3" },
+          "vel": { "$ref": "#/$defs/vec3" },
+          "yaw": { "type": "number" },
+          "pitch": { "type": "number" },
+          "boost": { "type": "number" }
+        }
+      }
+    },
+    "ball": {
+      "type": "object",
+      "required": ["pos", "vel"],
+      "properties": {
+        "pos": { "$ref": "#/$defs/vec3" },
+        "vel": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "scoreCyan": { "type": "integer" },
+    "scoreAmber": { "type": "integer" },
+    "clock": { "type": "number" },
+    "overtime": { "type": "boolean" },
+    "phase": { "enum": ["menu", "countdown", "play", "goal", "over"] },
+    "lastNudgeBits": { "type": "string" }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    }
+  }
+}

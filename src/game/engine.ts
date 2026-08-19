@@ -1,17 +1,43 @@
 import * as THREE from "three";
-import { DT, FIELD, type Snapshot } from "./types";
+import { DT, FIELD, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "./types";
 import { attachInput, injectKeys, readActions, setSteerOverride } from "./input";
 import type { Actions } from "./types";
-import { createWorld, snapshot, startMatch, stepWorld, type World } from "./sim";
+import {
+  applyCarWire,
+  applyHostWire,
+  assignTeams,
+  carToWire,
+  createWorld,
+  defaultSoloRoster,
+  hostWireFrom,
+  snapshot,
+  startMatch,
+  stepWorld,
+  type CarWire,
+  type HostWire,
+  type World,
+} from "./sim";
 import { sfx, unlockAudio } from "./audio";
+
+export type NetBridge = {
+  role: "solo" | "host" | "client";
+  localPeerId: string;
+  localName: string;
+  localLivery: Livery;
+  remotes: Record<string, CarWire>;
+  hostWorld: HostWire | null;
+};
 
 export type Engine = {
   start: () => void;
   stop: () => void;
   dispose: () => void;
-  play: () => void;
+  play: (roster?: RosterEntry[]) => RosterEntry[];
+  setIdentity: (peerId: string, name: string, livery: Livery) => void;
   getSnapshot: () => Snapshot;
   subscribe: (fn: (s: Snapshot) => void) => () => void;
+  getLocalWire: () => CarWire | null;
+  getHostWire: () => HostWire;
 };
 
 function pitchTexture() {
@@ -59,12 +85,42 @@ function ballTexture() {
   return tex;
 }
 
-function makeCar(color: number) {
+function brickTexture() {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#8b3a2a";
+  g.fillRect(0, 0, 256, 128);
+  g.fillStyle = "#c4b4a4";
+  for (let row = 0; row < 8; row++) {
+    const y = row * 16;
+    g.fillRect(0, y + 14, 256, 2);
+    const off = row % 2 ? 16 : 0;
+    for (let x = off; x < 256; x += 32) g.fillRect(x, y, 2, 16);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const LIVERY_COLOR: Record<Livery, number> = {
+  brick: 0x8b3a2a,
+  cyan: 0x2ee6d6,
+  amber: 0xff8a3d,
+  slate: 0x8aa3b0,
+};
+
+function makeCar(livery: Livery) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.15, 0.38, 2.15),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.45, roughness: 0.35 }),
-  );
+  const color = LIVERY_COLOR[livery];
+  const bodyMat =
+    livery === "brick"
+      ? new THREE.MeshStandardMaterial({ map: brickTexture(), metalness: 0.15, roughness: 0.7 })
+      : new THREE.MeshStandardMaterial({ color, metalness: 0.45, roughness: 0.35 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.38, 2.15), bodyMat);
   body.position.y = 0.12;
   body.castShadow = true;
   const cabin = new THREE.Mesh(
@@ -104,6 +160,7 @@ function makeCar(color: number) {
   glow.position.set(0, 0.12, 1.35);
   glow.name = "boostGlow";
   g.add(body, cabin, spoiler, nose, glow);
+  g.userData.livery = livery;
   return g;
 }
 
@@ -132,7 +189,6 @@ function makeArena(scene: THREE.Scene) {
     w.rotation.y = Math.PI / 2;
     scene.add(w);
   }
-  const endW = (halfW - goalHalfW) * 2;
   const makeEnd = (z: number, sign: number) => {
     const left = new THREE.Mesh(new THREE.PlaneGeometry(halfW - goalHalfW, wallH), wallMat);
     left.position.set(-(goalHalfW + (halfW - goalHalfW) / 2), wallH / 2, z);
@@ -141,7 +197,11 @@ function makeArena(scene: THREE.Scene) {
     const top = new THREE.Mesh(new THREE.PlaneGeometry(goalHalfW * 2, wallH - goalH), wallMat);
     top.position.set(0, goalH + (wallH - goalH) / 2, z);
     scene.add(left, right, top);
-    const postMat = new THREE.MeshStandardMaterial({ color: sign > 0 ? 0x2ee6d6 : 0xff8a3d, metalness: 0.6, roughness: 0.25 });
+    const postMat = new THREE.MeshStandardMaterial({
+      color: sign > 0 ? 0x2ee6d6 : 0xff8a3d,
+      metalness: 0.6,
+      roughness: 0.25,
+    });
     for (const x of [-goalHalfW, goalHalfW]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.28, goalH, 0.28), postMat);
       post.position.set(x, goalH / 2, z);
@@ -151,7 +211,6 @@ function makeArena(scene: THREE.Scene) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(goalHalfW * 2, 0.28, 0.28), postMat);
     bar.position.set(0, goalH, z);
     scene.add(bar);
-    void endW;
   };
   makeEnd(halfL, 1);
   makeEnd(-halfL, -1);
@@ -164,7 +223,7 @@ function makeArena(scene: THREE.Scene) {
   }
 }
 
-export function createEngine(canvas: HTMLCanvasElement): Engine {
+export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetBridge }): Engine {
   const world: World = createWorld();
   const listeners = new Set<(s: Snapshot) => void>();
   let running = false;
@@ -203,8 +262,11 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
   scene.add(cyan, amber);
 
   makeArena(scene);
-  const carMeshes = [makeCar(0x2ee6d6), makeCar(0xff8a3d)];
-  carMeshes.forEach((m) => scene.add(m));
+  const carMeshes = Array.from({ length: MAX_CARS }, () => makeCar("cyan"));
+  carMeshes.forEach((m) => {
+    m.visible = false;
+    scene.add(m);
+  });
 
   const ballMesh = new THREE.Mesh(
     new THREE.SphereGeometry(1.55, 32, 24),
@@ -247,16 +309,70 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
   const ro = new ResizeObserver(resize);
   ro.observe(canvas.parentElement || canvas);
 
+  function localCar() {
+    return world.cars.find((c) => c.isPlayer) ?? world.cars[0];
+  }
+
+  function applyNet() {
+    const net = netRef?.current;
+    if (!net || net.role === "solo") return;
+    for (const wire of Object.values(net.remotes)) {
+      if (wire.peerId === net.localPeerId) continue;
+      let car = world.cars.find((c) => c.peerId === wire.peerId);
+      if (!car) {
+        if (world.cars.length >= MAX_CARS) continue;
+        const id = world.cars.length;
+        world.cars.push({
+          id,
+          peerId: wire.peerId,
+          team: wire.team,
+          isPlayer: false,
+          remote: true,
+          name: wire.name,
+          livery: wire.livery,
+          pos: { ...wire.pos },
+          vel: { ...wire.vel },
+          yaw: wire.yaw,
+          pitch: wire.pitch,
+          boost: wire.boost,
+          onGround: wire.onGround,
+          jumpsLeft: 2,
+          jumpHeld: false,
+          boosting: wire.boosting,
+          flipTimer: 0,
+        });
+        car = world.cars[id];
+      }
+      applyCarWire(car, wire);
+      car.remote = true;
+      car.isPlayer = false;
+    }
+    if (net.role === "client" && net.hostWorld) applyHostWire(world, net.hostWorld);
+  }
+
   function syncVisuals() {
-    world.cars.forEach((car, i) => {
-      const m = carMeshes[i];
-      m.position.set(car.pos.x, car.pos.y, car.pos.z);
+    carMeshes.forEach((m, i) => {
+      const car = world.cars[i];
+      if (!car) {
+        m.visible = false;
+        return;
+      }
+      if (m.userData.livery !== car.livery) {
+        const fresh = makeCar(car.livery);
+        fresh.position.copy(m.position);
+        scene.remove(m);
+        scene.add(fresh);
+        carMeshes[i] = fresh;
+      }
+      const mesh = carMeshes[i];
+      mesh.visible = true;
+      mesh.position.set(car.pos.x, car.pos.y, car.pos.z);
       const cy = Math.cos(car.pitch);
       const fx = -Math.sin(car.yaw) * cy;
       const fy = Math.sin(car.pitch);
       const fz = -Math.cos(car.yaw) * cy;
-      m.lookAt(car.pos.x + fx, car.pos.y + fy, car.pos.z + fz);
-      const glow = m.getObjectByName("boostGlow") as THREE.Mesh;
+      mesh.lookAt(car.pos.x + fx, car.pos.y + fy, car.pos.z + fz);
+      const glow = mesh.getObjectByName("boostGlow") as THREE.Mesh;
       const mat = glow.material as THREE.MeshBasicMaterial;
       mat.opacity = car.boosting ? 0.85 : 0;
     });
@@ -267,7 +383,8 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
       padMeshes[i].visible = p.ready <= 0;
     });
 
-    const p = world.cars[0];
+    const p = localCar();
+    if (!p) return;
     const ff = { x: -Math.sin(p.yaw), z: -Math.cos(p.yaw) };
     camPos.set(p.pos.x - ff.x * 9.4, p.pos.y + 4.1, p.pos.z - ff.z * 9.4);
     camera.position.lerp(camPos, 0.12);
@@ -283,13 +400,17 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
     last = now;
     acc += dt;
     const actions = readActions();
+    const me = localCar();
     while (acc >= DT) {
-      const beforeY = world.cars[0].vel.y;
-      stepWorld(world, actions, DT);
+      applyNet();
+      const beforeY = me?.vel.y ?? 0;
+      const role = netRef?.current?.role ?? "solo";
+      if (role === "client") stepWorld(world, actions, DT, { carsOnly: true });
+      else stepWorld(world, actions, DT);
       acc -= DT;
-      if (world.phase === "play") {
-        if (actions.jump && !prevJump && world.cars[0].vel.y > beforeY + 2) sfx("jump");
-        if (actions.boost && !prevBoost && world.cars[0].boost > 1) sfx("boost");
+      if (world.phase === "play" && me) {
+        if (actions.jump && !prevJump && me.vel.y > beforeY + 2) sfx("jump");
+        if (actions.boost && !prevBoost && me.boost > 1) sfx("boost");
       }
       prevBoost = actions.boost;
       prevJump = actions.jump;
@@ -318,6 +439,53 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
     cancelAnimationFrame(raf);
   }
 
+  function setIdentity(peerId: string, name: string, livery: Livery) {
+    const car = localCar();
+    if (!car) return;
+    car.peerId = peerId;
+    car.name = name;
+    car.livery = livery;
+    emit();
+  }
+
+  function play(roster?: RosterEntry[]): RosterEntry[] {
+    unlockAudio();
+    const net = netRef?.current;
+    if (roster) startMatch(world, roster);
+    else if (net && net.role !== "solo") {
+      const ids = [net.localPeerId, ...Object.keys(net.remotes)].slice(0, MAX_CARS);
+      const teams = assignTeams(ids);
+      const built: RosterEntry[] = [
+        {
+          peerId: net.localPeerId,
+          name: net.localName,
+          livery: net.localLivery,
+          team: teams.get(net.localPeerId) ?? 0,
+          isLocal: true,
+          remote: false,
+        },
+        ...Object.values(net.remotes)
+          .filter((r) => r.peerId !== net.localPeerId)
+          .slice(0, MAX_CARS - 1)
+          .map((r) => ({
+            peerId: r.peerId,
+            name: r.name,
+            livery: r.livery,
+            team: teams.get(r.peerId) ?? r.team,
+            isLocal: false,
+            remote: true,
+          })),
+      ];
+      startMatch(world, built);
+    } else {
+      const n = net?.localName ?? "Brick Bruce";
+      const lv = net?.localLivery ?? "brick";
+      startMatch(world, defaultSoloRoster(n, lv));
+    }
+    emit();
+    return world.roster;
+  }
+
   const probe = {
     getYaw: () => world.cars[0].yaw,
     getSpeed: () => Math.hypot(world.cars[0].vel.x, world.cars[0].vel.z),
@@ -333,8 +501,10 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
       car.boost = 100;
       world.ball.pos = { x: 20, y: 1.55, z: -20 };
       world.ball.vel = { x: 0, y: 0, z: 0 };
-      world.cars[1].pos = { x: -20, y: 0.42, z: -30 };
-      world.cars[1].vel = { x: 0, y: 0, z: 0 };
+      if (world.cars[1]) {
+        world.cars[1].pos = { x: -20, y: 0.42, z: -30 };
+        world.cars[1].vel = { x: 0, y: 0, z: 0 };
+      }
       world.phase = "play";
     },
     stepFor: (seconds: number, extra?: Partial<Actions>) => {
@@ -369,16 +539,19 @@ export function createEngine(canvas: HTMLCanvasElement): Engine {
       renderer.dispose();
       if (window.__controlsTest === probe) delete window.__controlsTest;
     },
-    play() {
-      unlockAudio();
-      startMatch(world);
-    },
+    play,
+    setIdentity,
     getSnapshot: () => snapshot(world),
     subscribe(fn) {
       listeners.add(fn);
       fn(snapshot(world));
       return () => listeners.delete(fn);
     },
+    getLocalWire: () => {
+      const c = localCar();
+      return c ? carToWire(c) : null;
+    },
+    getHostWire: () => hostWireFrom(world),
   };
 }
 
@@ -390,7 +563,10 @@ declare global {
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;
       resetForQa?: () => void;
-      stepFor?: (seconds: number, extra?: { throttle?: number; steer?: number; pitch?: number; boost?: boolean; jump?: boolean }) => void;
+      stepFor?: (
+        seconds: number,
+        extra?: { throttle?: number; steer?: number; pitch?: number; boost?: boolean; jump?: boolean },
+      ) => void;
     };
   }
 }
