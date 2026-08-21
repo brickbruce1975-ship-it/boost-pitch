@@ -14,9 +14,25 @@ Default driver: **Brick Bruce** (brick livery). Rename and pick cyan / amber / s
 - **Space** jump, then double-jump or directional flip
 - **Shift** boost — refill on the glowing pads
 - **H** control help
+- **M** mute album · **N** play / pause The Orbit
 - Touch: left stick + Jump / Boost
 
 3:00 regulation, sudden-death overtime. Up to 8 cars in a casual lobby.
+
+## Soundtrack
+
+**The Orbit** by Brick Bruce — full album masters, same order as the Unity ride:
+
+1. Suit Up
+2. Float Easy
+3. Spaceage
+4. Astronaut
+5. Witness
+6. The Shimmer
+7. In the Glass
+
+Each track plays once (no loop). Suit Up starts on kickoff or Play album. Do not swap in DistroKid 30-second previews.
+
 
 ## Casual multiplayer (not ranked)
 
@@ -35,13 +51,18 @@ React 19 · TanStack Start · three.js · Tailwind v4 · Better Auth (optional s
 
 `unity/BoostPitch.Sim/` is the C# contract that mirrors `src/game/types.ts` + `src/game/sim.ts`:
 
-- `SimConstants.cs` — field extents, `Dt = 1/120`, Brick Bruce defaults
-- `WorldState.cs` — car / ball / actions / snapshot
+- `SimConstants.cs` — field extents, `Dt = 1/120`, Brick Bruce defaults, Pacejka + clutch LSD
+- `WorldState.cs` — car / ball / pads / actions / snapshot
+- `WorldStepper.cs` — ported match tick (same order as `stepWorld`)
+- `OrbitCoupeDriver.cs` — Rigidbody adapter that **calls** `WorldStepper.ApplyTires` (3:31 MCP path)
+- `OrbitMatchRunner.cs` — optional full match host
 - `QuantumKickoff.cs` — same 2-qubit H+CNOT impulse map
 - `schema/world.schema.json` — wire snapshot
-- `WorldStepper.cs` — documented step order (implement physics next)
 
-Drop the folder under `Assets/` in a URP 3D project. Keep numbers in lockstep with the browser.
+Drop the folder under `Assets/` in a Unity 6 URP/HDRP project. Keep numbers in lockstep with the browser. **No WheelCollider.** Live Editor Play Mode is still `architecture_only` until you assemble it locally.
+
+**Unity MCP** (official AI Assistant, Unity 6): [unity/BoostPitch.Sim/MCP.md](unity/BoostPitch.Sim/MCP.md). Pattern from Unity’s 3:31 demo — empty coupe + Rigidbody + `OrbitCoupeDriver`, not a second physics stack. Menu: **Boost Pitch → MCP → Assemble Playable Arena**.
+
 
 ## Educational kickoff sampler
 

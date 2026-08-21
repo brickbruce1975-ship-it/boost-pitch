@@ -1,0 +1,60 @@
+{
+  "album": "The Orbit",
+  "artist": "Brick Bruce",
+  "released": "2026-01-15",
+  "loop": false,
+  "volume": 0.82,
+  "fadeSec": 2.5,
+  "note": "Full masters. Play once per track. Do not use 30s DistroKid previews.",
+  "tracks": [
+    {
+      "id": "suit-up",
+      "title": "Suit Up",
+      "src": "/orbit/music/suit-up.mp3",
+      "seconds": 165.02,
+      "bytes": 2640709
+    },
+    {
+      "id": "float-easy",
+      "title": "Float Easy",
+      "src": "/orbit/music/float-easy.mp3",
+      "seconds": 185.34,
+      "bytes": 2965881
+    },
+    {
+      "id": "spaceage",
+      "title": "Spaceage",
+      "src": "/orbit/music/spaceage.mp3",
+      "seconds": 199.34,
+      "bytes": 3189907
+    },
+    {
+      "id": "astronaut",
+      "title": "Astronaut",
+      "src": "/orbit/music/astronaut.mp3",
+      "seconds": 204.04,
+      "bytes": 3265140
+    },
+    {
+      "id": "witness",
+      "title": "Witness",
+      "src": "/orbit/music/witness.mp3",
+      "seconds": 228.21,
+      "bytes": 3651752
+    },
+    {
+      "id": "the-shimmer",
+      "title": "The Shimmer",
+      "src": "/orbit/music/the-shimmer.mp3",
+      "seconds": 223.29,
+      "bytes": 3573176
+    },
+    {
+      "id": "in-the-glass",
+      "title": "In the Glass",
+      "src": "/orbit/music/in-the-glass.mp3",
+      "seconds": 182.6,
+      "bytes": 2921995
+    }
+  ]
+}

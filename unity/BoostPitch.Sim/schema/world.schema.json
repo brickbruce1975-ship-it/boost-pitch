@@ -19,7 +19,15 @@
           "vel": { "$ref": "#/$defs/vec3" },
           "yaw": { "type": "number" },
           "pitch": { "type": "number" },
-          "boost": { "type": "number" }
+          "boost": { "type": "number" },
+          "onGround": { "type": "boolean" },
+          "boosting": { "type": "boolean" },
+          "slip": { "type": "number" },
+          "kappa": { "type": "number" },
+          "yawRate": { "type": "number" },
+          "wL": { "type": "number" },
+          "wR": { "type": "number" },
+          "lock": { "type": "number" }
         }
       }
     },
@@ -31,11 +39,25 @@
         "vel": { "$ref": "#/$defs/vec3" }
       }
     },
+    "pads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pos": { "$ref": "#/$defs/vec3" },
+          "full": { "type": "boolean" },
+          "ready": { "type": "number" }
+        }
+      }
+    },
     "scoreCyan": { "type": "integer" },
     "scoreAmber": { "type": "integer" },
     "clock": { "type": "number" },
     "overtime": { "type": "boolean" },
     "phase": { "enum": ["menu", "countdown", "play", "goal", "over"] },
+    "countdown": { "type": "number" },
+    "phaseT": { "type": "number" },
+    "lastGoal": { "type": "integer" },
     "lastNudgeBits": { "type": "string" }
   },
   "$defs": {

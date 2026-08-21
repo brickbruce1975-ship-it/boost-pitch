@@ -7,6 +7,9 @@ import { setAnalog, setTap } from "@/game/input";
 import { BRICK_BRUCE, MATCH_SECONDS, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "@/game/types";
 import { assignTeams, type CarWire, type HostWire } from "@/game/sim";
 import { useP2PRoom, type PeerInfo } from "@/lib/multiplayer";
+import { OrbitSkyline } from "@/components/OrbitSkyline";
+import { OrbitRadio } from "@/components/OrbitRadio";
+import { startAlbum, toggleMute, toggleMusic } from "@/game/orbitMusic";
 
 function fmtClock(s: Snapshot) {
   if (s.overtime) return "OT";
@@ -73,6 +76,10 @@ export function GameView() {
     localName: BRICK_BRUCE.name,
     roster: [],
     lastNudgeBits: "00",
+    boosting: false,
+    aerial: false,
+    slip: 0,
+    lock: 0,
   });
   const [help, setHelp] = useState(false);
   const [name, setName] = useState(BRICK_BRUCE.name);
@@ -104,6 +111,7 @@ export function GameView() {
     netRef.current.role = "solo";
     netRef.current.localName = name.trim() || BRICK_BRUCE.name;
     netRef.current.localLivery = livery;
+    startAlbum();
     if (engineRef.current) engineRef.current.play();
     else pendingPlay.current = true;
   }
@@ -111,6 +119,8 @@ export function GameView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "KeyH") setHelp((v) => !v);
+      if (e.code === "KeyM") toggleMute();
+      if (e.code === "KeyN") toggleMusic();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -131,6 +141,7 @@ export function GameView() {
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-ink text-fg" style={{ touchAction: "none" }}>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <div className="bp-vignette" />
 
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between px-4 pt-3 sm:px-6">
         <div className="rounded-md bg-ink/55 px-3 py-1.5 backdrop-blur-sm">
@@ -174,21 +185,72 @@ export function GameView() {
       )}
 
       {snap.phase === "play" && (
-        <div className="pointer-events-none absolute bottom-6 left-1/2 w-56 -translate-x-1/2 sm:bottom-8">
+        <div className="pointer-events-none absolute bottom-24 left-1/2 w-56 -translate-x-1/2 sm:bottom-8 sm:w-72">
+          <div className="mb-2 flex items-end justify-between">
+            <div className="text-left">
+              <p className="font-display text-3xl font-bold leading-none tabular-nums text-fg">
+                {Math.round(snap.speed * 4)}
+              </p>
+              <p className="font-display text-[10px] tracking-[0.28em] text-muted uppercase">Speed</p>
+            </div>
+            <div className="flex gap-1">
+              {snap.aerial ? (
+                <span className="rounded-sm border border-line/20 bg-ink/70 px-2 py-0.5 font-display text-[10px] tracking-[0.22em] text-cyan uppercase">
+                  Aerial
+                </span>
+              ) : null}
+              {snap.boosting ? (
+                <span className="rounded-sm border border-cyan/40 bg-cyan/15 px-2 py-0.5 font-display text-[10px] tracking-[0.22em] text-cyan uppercase">
+                  Boost
+                </span>
+              ) : null}
+              {snap.slip > 0.22 && snap.onGround ? (
+                <span className="rounded-sm border border-amber/35 bg-amber/10 px-2 py-0.5 font-display text-[10px] tracking-[0.22em] text-amber uppercase">
+                  Slide
+                </span>
+              ) : null}
+              {snap.lock > 0.55 && snap.onGround && !snap.aerial ? (
+                <span className="rounded-sm border border-cyan/30 bg-cyan/10 px-2 py-0.5 font-display text-[10px] tracking-[0.22em] text-cyan uppercase">
+                  Posi
+                </span>
+              ) : null}
+              {snap.speed > 32 ? (
+                <span className="rounded-sm border border-amber/40 bg-amber/15 px-2 py-0.5 font-display text-[10px] tracking-[0.22em] text-amber uppercase">
+                  Breakaway
+                </span>
+              ) : null}
+            </div>
+          </div>
           <div className="mb-1 flex justify-between font-display text-[11px] tracking-widest text-muted uppercase">
             <span>Boost</span>
             <span>{Math.round(snap.boost)}</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-raised">
-            <div className="h-full rounded-full bg-cyan" style={{ width: `${Math.max(0, Math.min(100, snap.boost))}%` }} />
+          <div className="flex h-3 gap-1">
+            {Array.from({ length: 5 }, (_, i) => {
+              const fill = Math.max(0, Math.min(1, (snap.boost - i * 20) / 20));
+              return (
+                <div key={i} className="h-full flex-1 overflow-hidden rounded-sm bg-raised">
+                  <div
+                    className={`h-full ${snap.boosting ? "bg-cyan" : "bg-cyan/80"}`}
+                    style={{ width: `${fill * 100}%` }}
+                  />
+                </div>
+              );
+            })}
           </div>
+        </div>
+      )}
+
+      {snap.phase !== "menu" && (
+        <div className="absolute bottom-36 left-1/2 z-10 -translate-x-1/2 sm:bottom-8 sm:left-4 sm:translate-x-0">
+          <OrbitRadio compact />
         </div>
       )}
 
       {snap.phase === "countdown" && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="text-center">
-            <p className="font-display text-8xl font-bold text-fg drop-shadow-[0_0_24px_rgba(46,230,214,0.45)]">
+            <p className="bp-pop font-display text-8xl font-bold text-fg drop-shadow-[0_0_24px_rgba(46,230,214,0.45)]">
               {snap.countdown > 0.15 ? Math.ceil(snap.countdown) : "GO"}
             </p>
             <p className="mt-2 font-display text-[11px] tracking-[0.3em] text-muted uppercase">
@@ -199,18 +261,22 @@ export function GameView() {
       )}
 
       {snap.phase === "goal" && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <p className="font-display text-6xl font-bold tracking-wide text-fg">
-            {snap.lastGoal === 0 ? <span className="text-cyan">CYAN GOAL</span> : <span className="text-amber">AMBER GOAL</span>}
-          </p>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-x-0 top-0 h-14 bg-ink/80 sm:h-16" />
+          <div className="absolute inset-x-0 bottom-0 h-14 bg-ink/80 sm:h-16" />
+          <div className="grid h-full place-items-center">
+            <p className="bp-pop font-display text-6xl font-bold tracking-wide text-fg">
+              {snap.lastGoal === 0 ? <span className="text-cyan">CYAN GOAL</span> : <span className="text-amber">AMBER GOAL</span>}
+            </p>
+          </div>
         </div>
       )}
 
       {(snap.phase === "menu" || snap.phase === "over") && !session && (
-        <div className="absolute inset-0 grid place-items-center overflow-y-auto bg-ink/55 px-5 py-8 backdrop-blur-[2px]">
-          <div className="w-full max-w-md text-center">
-            <p className="font-display text-sm tracking-[0.4em] text-cyan uppercase">Arcade car soccer</p>
-            <h1 className="mt-2 font-display text-6xl font-bold tracking-wide sm:text-7xl">BOOST PITCH</h1>
+        <div className="absolute inset-0 flex items-end justify-center overflow-y-auto px-4 py-5 sm:items-center sm:justify-start sm:px-10 lg:px-16">
+          <div className="w-full max-w-md rounded-lg border border-line/15 bg-ink/80 p-5 text-center shadow-[0_24px_80px_rgba(7,16,24,0.55)] backdrop-blur-sm sm:p-6">
+            <p className="font-display text-sm tracking-[0.4em] text-cyan uppercase">The Orbit coupe</p>
+            <h1 className="mt-1 font-display text-5xl font-bold tracking-wide sm:mt-2 sm:text-7xl">BOOST PITCH</h1>
             {snap.phase === "over" ? (
               <p className="mt-4 font-display text-2xl">
                 {snap.score[0] === snap.score[1] ? "Draw" : snap.score[0] > snap.score[1] ? "Cyan wins" : "Amber wins"}{" "}
@@ -219,13 +285,21 @@ export function GameView() {
                 </span>
               </p>
             ) : (
-              <p className="mt-4 text-sm leading-relaxed text-muted">
-                Drive as <span className="text-amber">Brick Bruce</span> or rename yourself. Solo vs AI, or casual P2P
-                with friends — not ranked.
+              <p className="mt-4 hidden text-sm leading-relaxed text-muted sm:block">
+                Drive the black 70s muscle from <span className="text-amber">The Orbit</span> — cyan bars, cover
+                driver, no red brick. Solo vs AI, or casual P2P with friends.
               </p>
             )}
 
-            <label className="mt-6 block text-left">
+            <div className="mt-4 overflow-hidden rounded-md border border-line/10">
+              <img
+                src="/orbit/orbit-cover.jpg"
+                alt="The Orbit — Brick Bruce album cover"
+                className="h-20 w-full object-cover object-[48%_70%] sm:h-32"
+              />
+            </div>
+
+            <label className="mt-4 block text-left">
               <span className="font-display text-[11px] tracking-widest text-muted uppercase">Driver</span>
               <input
                 value={name}
@@ -243,7 +317,7 @@ export function GameView() {
                     livery === lv ? "border-cyan bg-cyan/15 text-cyan" : "border-line/15 text-muted"
                   }`}
                 >
-                  {lv === "brick" ? "Bruce" : lv}
+                  {lv === "brick" ? "Orbit" : lv}
                 </button>
               ))}
             </div>
@@ -251,7 +325,7 @@ export function GameView() {
             <button
               type="button"
               onClick={kickOff}
-              className="mt-6 w-full rounded-md bg-cyan px-8 py-3 font-display text-xl font-bold tracking-widest text-ink uppercase"
+              className="mt-4 w-full rounded-md bg-cyan px-8 py-3 font-display text-xl font-bold tracking-widest text-ink uppercase sm:mt-6"
             >
               {snap.phase === "over" ? "Rematch vs AI" : "Solo kick off"}
             </button>
@@ -259,7 +333,10 @@ export function GameView() {
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setSession({ room: roomCode(), name: displayName, livery })}
+                onClick={() => {
+                  startAlbum();
+                  setSession({ room: roomCode(), name: displayName, livery });
+                }}
                 className="rounded-md border border-amber/40 bg-amber/10 px-3 py-3 font-display text-sm font-bold tracking-widest text-amber uppercase"
               >
                 Host room
@@ -284,9 +361,39 @@ export function GameView() {
             <p className="mt-4 text-[11px] leading-relaxed text-muted">
               Casual lobby only — friends you invite. Peers learn each other's IPs. Not for ranked play.
             </p>
+            <OrbitRadio />
             <p className="mt-2 font-display text-xs tracking-widest text-muted uppercase">
-              WASD drive · Space jump · Shift boost · H help
+              WASD drive · Space jump · Shift boost · H help · M mute · N play
             </p>
+            <p className="mt-3 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-muted">
+              <a
+                className="hover:text-cyan"
+                href="https://distrokid.com/hyperfollow/brickbruce/the-orbit?ref=release"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Stream The Orbit
+              </a>
+              <a
+                className="hover:text-cyan"
+                href="https://open.spotify.com/album/5BoIJ736xwpMsNJTaWpwVT"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Spotify
+              </a>
+              <a
+                className="hover:text-cyan"
+                href="https://www.youtube.com/playlist?list=OLAK5uy_nvrml4ucCtBOtycB_zF-fD8t77Dzcj-tU"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Watch
+              </a>
+            </p>
+            <div className="hidden sm:block">
+              <OrbitSkyline />
+            </div>
           </div>
         </div>
       )}
@@ -319,40 +426,46 @@ export function GameView() {
           <ul className="mt-2 space-y-1 text-muted">
             <li>W / S — throttle / reverse (pitch in air)</li>
             <li>A / D — steer left / right</li>
+            <li>Rear clutch LSD (Posi) — planted on power, rotates off throttle</li>
             <li>Space — jump, then flip / double jump</li>
             <li>Shift — boost (pads refill)</li>
+            <li>M — mute album · N — play / pause</li>
           </ul>
         </div>
       )}
 
-      <div className="absolute right-4 bottom-6 flex flex-col gap-3 sm:hidden">
-        <button
-          type="button"
-          className="h-16 w-16 rounded-full border border-cyan/40 bg-cyan/20 font-display text-xs tracking-widest text-cyan uppercase"
-          onPointerDown={() => setTap("boost", true)}
-          onPointerUp={() => setTap("boost", false)}
-          onPointerCancel={() => setTap("boost", false)}
-        >
-          Boost
-        </button>
-        <button
-          type="button"
-          className="h-16 w-16 rounded-full border border-line/30 bg-raised/80 font-display text-xs tracking-widest text-fg uppercase"
-          onPointerDown={() => setTap("jump", true)}
-          onPointerUp={() => setTap("jump", false)}
-          onPointerCancel={() => setTap("jump", false)}
-        >
-          Jump
-        </button>
-      </div>
-      <div
-        ref={stickRef}
-        className="absolute bottom-6 left-4 h-28 w-28 rounded-full border border-line/20 bg-raised/50 sm:hidden"
-        onPointerDown={onStick}
-        onPointerMove={(e) => e.buttons && onStick(e)}
-        onPointerUp={() => setAnalog(0, 0)}
-        onPointerCancel={() => setAnalog(0, 0)}
-      />
+      {snap.phase === "play" && (
+        <>
+          <div className="absolute right-4 bottom-6 flex flex-col gap-3 sm:hidden">
+            <button
+              type="button"
+              className="h-16 w-16 rounded-full border border-cyan/40 bg-cyan/20 font-display text-xs tracking-widest text-cyan uppercase"
+              onPointerDown={() => setTap("boost", true)}
+              onPointerUp={() => setTap("boost", false)}
+              onPointerCancel={() => setTap("boost", false)}
+            >
+              Boost
+            </button>
+            <button
+              type="button"
+              className="h-16 w-16 rounded-full border border-line/30 bg-raised/80 font-display text-xs tracking-widest text-fg uppercase"
+              onPointerDown={() => setTap("jump", true)}
+              onPointerUp={() => setTap("jump", false)}
+              onPointerCancel={() => setTap("jump", false)}
+            >
+              Jump
+            </button>
+          </div>
+          <div
+            ref={stickRef}
+            className="absolute bottom-6 left-4 h-28 w-28 rounded-full border border-line/20 bg-raised/50 sm:hidden"
+            onPointerDown={onStick}
+            onPointerMove={(e) => e.buttons && onStick(e)}
+            onPointerUp={() => setAnalog(0, 0)}
+            onPointerCancel={() => setAnalog(0, 0)}
+          />
+        </>
+      )}
     </div>
   );
 }

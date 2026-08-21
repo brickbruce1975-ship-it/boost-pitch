@@ -25,6 +25,19 @@ export type Car = {
   jumpHeld: boolean;
   boosting: boolean;
   flipTimer: number;
+  /** |slip angle| rad while grounded — 0 in air. */
+  slip: number;
+  /** Longitudinal slip ratio (driven axle). */
+  kappa: number;
+  /** Relaxed lateral force (N), first-order lag. */
+  fyFilt: number;
+  /** Yaw rate (rad/s) after steer + rear ΔFx moment. */
+  yawRate: number;
+  /** Rear-left / rear-right wheel spin (rad/s). */
+  wL: number;
+  wR: number;
+  /** Clutch LSD lock 0..1 (Posi working). */
+  lock: number;
 };
 
 export type Ball = {
@@ -63,6 +76,10 @@ export type Snapshot = {
   localName: string;
   roster: { name: string; team: 0 | 1; livery: Livery; peerId: string }[];
   lastNudgeBits: string;
+  boosting: boolean;
+  aerial: boolean;
+  slip: number;
+  lock: number;
 };
 
 export type Actions = {

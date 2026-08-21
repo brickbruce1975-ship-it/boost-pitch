@@ -36,6 +36,16 @@ namespace BoostPitch.Sim
         public float boost;
         public bool onGround;
         public bool boosting;
+        public int jumpsLeft;
+        public bool jumpHeld;
+        public float flipTimer;
+        public float slip;
+        public float kappa;
+        public float fyFilt;
+        public float yawRate;
+        public float wL;
+        public float wR;
+        public float lock;
     }
 
     [Serializable]
@@ -46,15 +56,27 @@ namespace BoostPitch.Sim
     }
 
     [Serializable]
+    public class BoostPadState
+    {
+        public Vec3 pos;
+        public bool full;
+        public float ready;
+    }
+
+    [Serializable]
     public class WorldSnapshot
     {
         public CarState[] cars;
         public BallState ball;
+        public BoostPadState[] pads;
         public int scoreCyan;
         public int scoreAmber;
         public float clock;
         public bool overtime;
         public string phase;
+        public float countdown;
+        public float phaseT;
+        public int lastGoal; // -1 none, 0 cyan, 1 amber
         public string lastNudgeBits;
     }
 }

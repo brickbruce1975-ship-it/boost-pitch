@@ -16,6 +16,7 @@ import {
   BRICK_BRUCE,
 } from "./types";
 import { sampleKickoffImpulse } from "./quantumKickoff";
+import type { FxPulse } from "./fx";
 
 const GRAVITY = 34;
 const BALL_G = 30;
@@ -31,10 +32,31 @@ const AIR_YAW = 2.15;
 const AIR_PITCH = 2.35;
 const JUMP_V = 12.2;
 const DBL_JUMP_V = 11.4;
-const AIR_DRAG = 0.28;
-const GROUND_DRAG = 0.55;
+const AIR_DRAG = 0.38;
+const ROLL_DRAG = 0.85;
+const COAST_DRAG = 1.45;
+const MASS = 1.2;
+const MU = 1.55;
+const PACEJKA_B = 9.4;
+const PACEJKA_C = 1.3;
+const PACEJKA_E = 0.32;
+const KAPPA_SCALE = 0.12;
+const RELAX_LEN = 0.42;
+const DOWNFORCE = 0.016;
+const SLIP_REF = 2.4;
+const TRACK = 1.48;
+const AXLE = 0.88;
+const R_WH = 0.33;
+const I_WH = 0.024;
+const I_ZZ = 14;
+const LSD_PRELOAD = 0.28;
+const LSD_GAIN = 0.55;
+const LSD_VISC = 0.2;
+const LSD_K = 1.6;
+const W_MAX = 220;
 const BALL_BOUNCE = 0.64;
-const BALL_DRAG = 0.12;
+const BALL_DRAG = 0.18;
+const BALL_ROLL = 1.4;
 
 export type World = {
   cars: Car[];
@@ -49,6 +71,7 @@ export type World = {
   phaseT: number;
   roster: RosterEntry[];
   lastNudgeBits: string;
+  fx: FxPulse[];
 };
 
 function v(x = 0, y = 0, z = 0) {
@@ -82,6 +105,13 @@ function kickoffCar(
     jumpHeld: false,
     boosting: false,
     flipTimer: 0,
+    slip: 0,
+    kappa: 0,
+    fyFilt: 0,
+    yawRate: 0,
+    wL: 0,
+    wR: 0,
+    lock: 0,
   };
 }
 
@@ -139,6 +169,7 @@ export function createWorld(): World {
     phaseT: 0,
     roster,
     lastNudgeBits: "00",
+    fx: [],
   };
 }
 
@@ -204,6 +235,162 @@ function clampArena(p: { x: number; y: number; z: number }, r: number, isBall: b
   return null;
 }
 
+function heading(yaw: number) {
+  return { nx: -Math.sin(yaw), nz: -Math.cos(yaw), rx: Math.cos(yaw), rz: -Math.sin(yaw) };
+}
+
+function magic(x: number, B: number, C: number, D: number, E: number) {
+  const bx = B * x;
+  return D * Math.sin(C * Math.atan(bx - E * (bx - Math.atan(bx))));
+}
+
+/** Pacejka B/C/D/E on two rear patches + clutch LSD (Posi).
+ * Boost is a thruster — not in the circle.
+ * CAGE Rung 2: do(lsdCap=0)|steer+throttle → more yaw than locked (open peel). */
+function applyTires(car: Car, a: Actions, dt: number, pulses: FxPulse[], lsdCap = 1) {
+  car.pitch *= Math.max(0, 1 - 12 * dt);
+
+  let driveAccel = 0;
+  const along0 = car.vel.x * -Math.sin(car.yaw) + car.vel.z * -Math.cos(car.yaw);
+  if (a.throttle > 0.05) driveAccel = ACCEL * a.throttle;
+  else if (a.throttle < -0.05) driveAccel = along0 > 0.6 ? -BRAKE : -REVERSE;
+
+  let boostAccel = 0;
+  if (a.boost && car.boost > 0) {
+    boostAccel = BOOST_ACCEL;
+    car.boost = Math.max(0, car.boost - BOOST_DRAIN * dt);
+    car.boosting = true;
+  } else car.boosting = false;
+
+  const coasting = Math.abs(a.throttle) < 0.05 && !car.boosting;
+  const longDrag = coasting ? COAST_DRAG : ROLL_DRAG;
+  const shift = boostAccel > 0 || driveAccel > 6 ? 0.05 : driveAccel < -10 || coasting ? -0.14 : 0;
+  const rotate = shift < -0.05 ? 1.22 : 1;
+
+  const reverse = along0 >= -0.4 ? 1 : -1;
+  const spd0 = Math.hypot(car.vel.x, car.vel.z);
+  const speedFactor = Math.min(1, Math.max(0.18, spd0 / 10));
+  const steerFade = 1 / (1 + 1.15 * car.slip);
+  const yawSteer = a.steer * TURN * speedFactor * reverse * steerFade * rotate;
+  car.yaw += yawSteer * dt;
+
+  const { nx, nz, rx, rz } = heading(car.yaw);
+  let along = car.vel.x * nx + car.vel.z * nz;
+  let lat = car.vel.x * rx + car.vel.z * rz;
+  const yawRate = car.yawRate;
+  const halfT = TRACK * 0.5;
+  const vL = along - yawRate * halfT;
+  const vR = along + yawRate * halfT;
+  const latRear = lat + yawRate * AXLE;
+
+  const load = MASS * GRAVITY + DOWNFORCE * along * along;
+  const latXfer = Math.max(-0.42, Math.min(0.42, 0.5 * Math.tanh(lat / 7)));
+  let nL = 0.5 * load * (1 - latXfer);
+  let nR = 0.5 * load * (1 + latXfer);
+  nL = Math.max(0.06 * load, nL);
+  nR = Math.max(0.06 * load, nR);
+  const nFix = load / (nL + nR);
+  nL *= nFix;
+  nR *= nFix;
+
+  const kappaL0 = (R_WH * car.wL - vL) / Math.max(Math.abs(vL), SLIP_REF);
+  const kappaR0 = (R_WH * car.wR - vR) / Math.max(Math.abs(vR), SLIP_REF);
+  const alphaL = Math.atan2(latRear, Math.max(Math.abs(vL), SLIP_REF));
+  const alphaR = Math.atan2(latRear, Math.max(Math.abs(vR), SLIP_REF));
+
+  const patch = (alpha: number, kappa: number, n: number) => {
+    const d = Math.max(0.8, MU * n * (1 + shift));
+    const fyScale = 1 / Math.hypot(1, kappa / KAPPA_SCALE);
+    let fy = -magic(alpha, PACEJKA_B, PACEJKA_C, d, PACEJKA_E) * fyScale;
+    let fx = magic(kappa, PACEJKA_B, PACEJKA_C, d, PACEJKA_E);
+    const ell = Math.hypot(fx / d, fy / d);
+    if (ell > 1) {
+      fx /= ell;
+      fy /= ell;
+    }
+    return { fx, fy };
+  };
+
+  const L = patch(alphaL, kappaL0, nL);
+  const Rgt = patch(alphaR, kappaR0, nR);
+
+  const tAxle = MASS * driveAccel * R_WH;
+  const tEach = tAxle * 0.5;
+  const dw = car.wL - car.wR;
+  const tCap =
+    (LSD_PRELOAD * MU * load * 0.5 + LSD_GAIN * Math.abs(MASS * driveAccel) + LSD_VISC * MASS * Math.abs(dw)) *
+    R_WH *
+    Math.max(0, Math.min(1, lsdCap));
+  const tLock = Math.sign(dw || 0) * Math.min(Math.abs(tCap), Math.abs(dw) * LSD_K);
+  const tL = tEach - tLock;
+  const tR = tEach + tLock;
+  car.lock = Math.max(
+    0,
+    Math.min(1, (LSD_PRELOAD + LSD_GAIN * Math.abs(a.throttle) + LSD_VISC * Math.min(1, Math.abs(dw) * 0.08)) * lsdCap),
+  );
+
+  car.wL += ((tL - L.fx * R_WH) / I_WH) * dt;
+  car.wR += ((tR - Rgt.fx * R_WH) / I_WH) * dt;
+  car.wL = Math.max(-W_MAX, Math.min(W_MAX, car.wL));
+  car.wR = Math.max(-W_MAX, Math.min(W_MAX, car.wR));
+
+  const kappaL = (R_WH * car.wL - vL) / Math.max(Math.abs(vL), SLIP_REF);
+  const kappaR = (R_WH * car.wR - vR) / Math.max(Math.abs(vR), SLIP_REF);
+  const mz = (Rgt.fx - L.fx) * halfT;
+  const yawDiff = mz / I_ZZ;
+  car.yaw += yawDiff * dt;
+  car.yawRate = yawSteer + yawDiff;
+
+  let fxDrive = L.fx + Rgt.fx - MASS * along * longDrag;
+  let fy = L.fy + Rgt.fy;
+  const rel = Math.min(1, ((Math.abs(along) + 3.5) * dt) / RELAX_LEN);
+  car.fyFilt += (fy - car.fyFilt) * rel;
+
+  along += ((fxDrive + MASS * boostAccel) / MASS) * dt;
+  lat += (car.fyFilt / MASS) * dt;
+  car.slip = Math.max(Math.abs(alphaL), Math.abs(alphaR));
+  car.kappa = 0.5 * (kappaL + kappaR);
+  car.vel.x = nx * along + rx * lat;
+  car.vel.z = nz * along + rz * lat;
+
+  const max = boostAccel > 0 ? BOOST_MAX : MAX_SPD;
+  const hs = Math.hypot(car.vel.x, car.vel.z);
+  if (hs > max) {
+    car.vel.x *= max / hs;
+    car.vel.z *= max / hs;
+  }
+
+  const skidL = Math.abs(alphaL) > 0.18 || Math.abs(kappaL) > 0.14;
+  const skidR = Math.abs(alphaR) > 0.18 || Math.abs(kappaR) > 0.14;
+  if ((skidL || skidR) && hs > 9 && Math.random() < dt * 14) {
+    const mag = Math.min(1, car.slip * 2);
+    if (skidL) {
+      pulses.push({
+        kind: "skid",
+        mag,
+        x: car.pos.x - nx * AXLE - rx * halfT,
+        y: 0.06,
+        z: car.pos.z - nz * AXLE - rz * halfT,
+      });
+    }
+    if (skidR) {
+      pulses.push({
+        kind: "skid",
+        mag,
+        x: car.pos.x - nx * AXLE + rx * halfT,
+        y: 0.06,
+        z: car.pos.z - nz * AXLE + rz * halfT,
+      });
+    }
+  }
+
+  if (a.jump && !car.jumpHeld) {
+    car.vel.y = JUMP_V;
+    car.onGround = false;
+    car.jumpsLeft = 1;
+  }
+}
+
 function bounce(vel: { x: number; y: number; z: number }, n: { nx: number; ny: number; nz: number }, rest: number) {
   const vn = vel.x * n.nx + vel.y * n.ny + vel.z * n.nz;
   if (vn < 0) {
@@ -213,46 +400,20 @@ function bounce(vel: { x: number; y: number; z: number }, n: { nx: number; ny: n
   }
 }
 
-function stepCar(car: Car, a: Actions, dt: number) {
+function stepCar(car: Car, a: Actions, dt: number, fx: FxPulse[], lsdCap = 1) {
   car.flipTimer = Math.max(0, car.flipTimer - dt);
-  const f = carForward(car);
-  const spd = Math.hypot(car.vel.x, car.vel.z);
 
   if (car.onGround) {
-    car.pitch *= Math.max(0, 1 - 12 * dt);
-    const speedFactor = Math.min(1, Math.max(0.18, spd / 10));
-    const reverse = car.vel.x * f.x + car.vel.z * f.z >= -0.4 ? 1 : -1;
-    car.yaw += a.steer * TURN * speedFactor * reverse * dt;
-
-    const along = car.vel.x * f.x + car.vel.z * f.z;
-    let targetAccel = 0;
-    if (a.throttle > 0.05) targetAccel = ACCEL * a.throttle;
-    else if (a.throttle < -0.05) targetAccel = along > 0.6 ? -BRAKE : -REVERSE;
-    if (a.boost && car.boost > 0) {
-      targetAccel += BOOST_ACCEL;
-      car.boost = Math.max(0, car.boost - BOOST_DRAIN * dt);
-      car.boosting = true;
-    } else car.boosting = false;
-
-    car.vel.x += f.x * targetAccel * dt;
-    car.vel.z += f.z * targetAccel * dt;
-    car.vel.x *= 1 - GROUND_DRAG * dt;
-    car.vel.z *= 1 - GROUND_DRAG * dt;
-
-    const max = a.boost && car.boost > 0 ? BOOST_MAX : MAX_SPD;
-    const hs = Math.hypot(car.vel.x, car.vel.z);
-    if (hs > max) {
-      car.vel.x *= max / hs;
-      car.vel.z *= max / hs;
-    }
-
-    if (a.jump && !car.jumpHeld) {
-      car.vel.y = JUMP_V;
-      car.onGround = false;
-      car.jumpsLeft = 1;
-    }
+    applyTires(car, a, dt, fx, lsdCap);
   } else {
+    car.slip = 0;
+    car.kappa = 0;
+    car.lock = 0;
+    car.fyFilt *= 0.5;
+    car.wL *= Math.max(0, 1 - 0.9 * dt);
+    car.wR *= Math.max(0, 1 - 0.9 * dt);
     car.yaw += a.steer * AIR_YAW * dt;
+    car.yawRate = a.steer * AIR_YAW;
     car.pitch += a.pitch * AIR_PITCH * dt;
     car.pitch = Math.max(-1.15, Math.min(1.15, car.pitch));
     if (a.boost && car.boost > 0) {
@@ -286,44 +447,86 @@ function stepCar(car: Car, a: Actions, dt: number) {
   car.pos.z += car.vel.z * dt;
 
   if (car.pos.y <= CAR_H) {
+    const landed = !car.onGround && car.vel.y < -4;
     car.pos.y = CAR_H;
     if (car.vel.y < 0) car.vel.y = 0;
     if (!car.onGround) {
       car.onGround = true;
       car.jumpsLeft = 2;
       car.pitch *= 0.3;
+      const hx = -Math.sin(car.yaw);
+      const hz = -Math.cos(car.yaw);
+      const along = car.vel.x * hx + car.vel.z * hz;
+      car.vel.x = hx * along + (car.vel.x - hx * along) * 0.35;
+      car.vel.z = hz * along + (car.vel.z - hz * along) * 0.35;
+      car.wL = along / R_WH;
+      car.wR = along / R_WH;
+      if (landed) fx.push({ kind: "land", mag: 0.4, x: car.pos.x, y: car.pos.y, z: car.pos.z });
     }
   }
 
   const hit = clampArena(car.pos, CAR_R * 0.85, false);
   if (hit) {
+    const spd = Math.hypot(car.vel.x, car.vel.z);
     bounce(car.vel, hit, 0.15);
     car.vel.x *= 0.7;
     car.vel.z *= 0.7;
+    if (spd > 7) {
+      fx.push({
+        kind: "wall",
+        mag: Math.min(1, spd / 28),
+        x: car.pos.x,
+        y: car.pos.y + 0.4,
+        z: car.pos.z,
+      });
+    }
   }
 }
 
-function stepBall(ball: Ball, dt: number) {
+function stepBall(ball: Ball, dt: number, fx: FxPulse[]) {
   ball.vel.y -= BALL_G * dt;
-  ball.vel.x *= 1 - BALL_DRAG * dt;
   ball.vel.y *= 1 - BALL_DRAG * 0.35 * dt;
-  ball.vel.z *= 1 - BALL_DRAG * dt;
   ball.pos.x += ball.vel.x * dt;
   ball.pos.y += ball.vel.y * dt;
   ball.pos.z += ball.vel.z * dt;
 
   if (ball.pos.y < BALL_R) {
+    const impact = -ball.vel.y;
     ball.pos.y = BALL_R;
     if (ball.vel.y < 0) ball.vel.y = -ball.vel.y * BALL_BOUNCE;
-    ball.vel.x *= 0.985;
-    ball.vel.z *= 0.985;
+    ball.vel.x *= Math.max(0, 1 - BALL_ROLL * dt);
+    ball.vel.z *= Math.max(0, 1 - BALL_ROLL * dt);
     if (Math.abs(ball.vel.y) < 1.2) ball.vel.y = 0;
+    if (impact > 6) {
+      fx.push({
+        kind: "land",
+        mag: Math.min(1, impact / 18),
+        x: ball.pos.x,
+        y: 0.12,
+        z: ball.pos.z,
+      });
+    }
+  } else {
+    ball.vel.x *= 1 - BALL_DRAG * dt;
+    ball.vel.z *= 1 - BALL_DRAG * dt;
   }
   const hit = clampArena(ball.pos, BALL_R, true);
-  if (hit) bounce(ball.vel, hit, BALL_BOUNCE);
+  if (hit) {
+    const spd = Math.hypot(ball.vel.x, ball.vel.y, ball.vel.z);
+    bounce(ball.vel, hit, BALL_BOUNCE);
+    if (spd > 9) {
+      fx.push({
+        kind: "wall",
+        mag: Math.min(1, spd / 24),
+        x: ball.pos.x,
+        y: ball.pos.y,
+        z: ball.pos.z,
+      });
+    }
+  }
 }
 
-function collideCarBall(car: Car, ball: Ball) {
+function collideCarBall(car: Car, ball: Ball, fx: FxPulse[]) {
   const dx = ball.pos.x - car.pos.x;
   const dy = ball.pos.y - (car.pos.y + 0.15);
   const dz = ball.pos.z - car.pos.z;
@@ -343,12 +546,15 @@ function collideCarBall(car: Car, ball: Ball) {
   const vn = rvx * nx + rvy * ny + rvz * nz;
   if (vn < 0) {
     const extra = (car.boosting ? 9 : 4) + (car.flipTimer > 0 ? 6 : 0);
-    const j = -(1.12) * vn + extra;
+    const j = -1.12 * vn + extra;
     ball.vel.x += j * nx;
     ball.vel.y += j * ny * 0.85;
     ball.vel.z += j * nz;
     car.vel.x -= nx * 2.4;
     car.vel.z -= nz * 2.4;
+    if (vn < -2.2) {
+      fx.push({ kind: "hit", mag: Math.min(1, -vn / 18), x: ball.pos.x, y: ball.pos.y, z: ball.pos.z });
+    }
   }
 }
 
@@ -400,8 +606,8 @@ function botActions(w: World, car: Car): Actions {
   const steer = Math.max(-1, Math.min(1, err * 2.2));
   const aligned = Math.abs(err) < 0.45;
   const throttle = aligned ? 1 : 0.55;
-  const boost = aligned && dist > 16 && car.boost > 8;
-  const jump = ball.pos.y > 3.2 && dist < 7 && car.onGround;
+  const boost = aligned && dist > 10 && car.boost > 8;
+  const jump = ball.pos.y > 2.5 && dist < 8 && car.onGround;
   const pitch = !car.onGround ? Math.max(-1, Math.min(1, (ball.pos.y - car.pos.y) * 0.25)) : 0;
   return { throttle, steer, pitch, boost, jump };
 }
@@ -416,6 +622,7 @@ function collectPads(w: World, dt: number) {
       if (dx * dx + dz * dz < 3.4 * 3.4 && car.onGround) {
         car.boost = Math.min(100, car.boost + (pad.full ? 100 : 12));
         pad.ready = pad.full ? 10 : 4;
+        w.fx.push({ kind: "pad", mag: pad.full ? 1 : 0.4, x: pad.pos.x, y: 0.2, z: pad.pos.z });
       }
     }
   }
@@ -430,13 +637,15 @@ function checkGoal(w: World): 0 | 1 | null {
   return null;
 }
 
-export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOnly?: boolean }) {
+export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOnly?: boolean; lsdCap?: number }) {
   if (w.phase === "menu" || w.phase === "over") return;
+  w.fx.length = 0;
+  const lsdCap = opts?.lsdCap ?? 1;
   if (opts?.carsOnly) {
     for (const car of w.cars) {
       if (car.remote) continue;
       const a = car.isPlayer ? player : botActions(w, car);
-      stepCar(car, a, dt);
+      stepCar(car, a, dt, w.fx, lsdCap);
     }
     return;
   }
@@ -454,15 +663,10 @@ export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOn
   if (w.phase === "goal") {
     if (w.phaseT > 2.2) {
       resetKickoff(w);
-      if (w.overtime) {
-        w.phase = "countdown";
-        w.phaseT = 0;
-      } else {
-        w.phase = "countdown";
-        w.phaseT = 0;
-      }
+      w.phase = "countdown";
+      w.phaseT = 0;
     }
-    stepBall(w.ball, dt);
+    stepBall(w.ball, dt, w.fx);
     return;
   }
 
@@ -487,19 +691,26 @@ export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOn
   for (const car of w.cars) {
     if (car.remote) continue;
     const a = car.isPlayer ? player : botActions(w, car);
-    stepCar(car, a, dt);
+    stepCar(car, a, dt, w.fx, lsdCap);
   }
-  stepBall(w.ball, dt);
+  stepBall(w.ball, dt, w.fx);
   for (let i = 0; i < w.cars.length; i++) {
     for (let j = i + 1; j < w.cars.length; j++) collideCars(w.cars[i], w.cars[j]);
   }
-  for (const car of w.cars) collideCarBall(car, w.ball);
+  for (const car of w.cars) collideCarBall(car, w.ball, w.fx);
   collectPads(w, dt);
 
   const scored = checkGoal(w);
   if (scored !== null) {
     w.score[scored] += 1;
     w.lastGoal = scored;
+    w.fx.push({
+      kind: "goal",
+      mag: scored === 0 ? 1 : 0,
+      x: w.ball.pos.x,
+      y: w.ball.pos.y,
+      z: w.ball.pos.z,
+    });
     if (w.overtime) {
       w.phase = "over";
     } else {
@@ -530,6 +741,10 @@ export function snapshot(w: World): Snapshot {
       peerId: c.peerId,
     })),
     lastNudgeBits: w.lastNudgeBits,
+    boosting: p?.boosting ?? false,
+    aerial: p ? !p.onGround && p.pos.y > 1.05 : false,
+    slip: p?.slip ?? 0,
+    lock: p?.lock ?? 0,
   };
 }
 

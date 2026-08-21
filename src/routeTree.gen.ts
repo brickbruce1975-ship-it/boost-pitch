@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiRtcRouteImport } from './routes/api/rtc'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiBskyFeedRouteImport } from './routes/api/bsky/feed'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBskyFeedRoute = ApiBskyFeedRouteImport.update({
+  id: '/api/bsky/feed',
+  path: '/api/bsky/feed',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/rtc': typeof ApiRtcRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bsky/feed': typeof ApiBskyFeedRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/rtc': typeof ApiRtcRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bsky/feed': typeof ApiBskyFeedRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,15 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/api/rtc': typeof ApiRtcRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bsky/feed': typeof ApiBskyFeedRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/api/rtc' | '/api/auth/$'
+  fullPaths: '/' | '/login' | '/api/rtc' | '/api/auth/$' | '/api/bsky/feed'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/api/rtc' | '/api/auth/$'
-  id: '__root__' | '/' | '/login' | '/api/rtc' | '/api/auth/$'
+  to: '/' | '/login' | '/api/rtc' | '/api/auth/$' | '/api/bsky/feed'
+  id:
+    '__root__' | '/' | '/login' | '/api/rtc' | '/api/auth/$' | '/api/bsky/feed'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +77,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiRtcRoute: typeof ApiRtcRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBskyFeedRoute: typeof ApiBskyFeedRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +110,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bsky/feed': {
+      id: '/api/bsky/feed'
+      path: '/api/bsky/feed'
+      fullPath: '/api/bsky/feed'
+      preLoaderRoute: typeof ApiBskyFeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +125,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiRtcRoute: ApiRtcRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBskyFeedRoute: ApiBskyFeedRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
