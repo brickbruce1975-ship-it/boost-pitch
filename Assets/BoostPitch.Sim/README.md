@@ -21,7 +21,7 @@ Keep numbers and field names in lockstep. Do not invent a second physics story.
 ## Before you hit Play (checklist)
 
 1. Open this **repo root** in Unity Hub (it is the Unity project: `Assets/` + `ProjectSettings/`).
-2. Unity **6** (6000.0.50f1 or any 6000.0.x) + official **AI Assistant** MCP ([MCP.md](MCP.md)).
+2. Unity **6.5 (6000.5.0f1)** — same editor as BrickBruceOrbit — + official **AI Assistant** MCP ([MCP.md](MCP.md)).
 3. Menu **Boost Pitch → MCP → Assemble Playable Arena** (or paste [McpKickoffPrompt.md](McpKickoffPrompt.md)).
 4. Album clips are already in `Resources/OrbitAudio/` (suit-up … in-the-glass). Play once, no loop.
 5. Active Input Handling = **Both** (set in ProjectSettings).

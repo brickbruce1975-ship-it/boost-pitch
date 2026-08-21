@@ -49,7 +49,8 @@ React 19 · TanStack Start · three.js · Tailwind v4 · Better Auth (optional s
 
 ## Unity (Hub)
 
-This repo **is** a Unity 6 project (`Assets/` + `ProjectSettings/` on `main`). In Unity Hub: **Add → Add project from repository** → `brickbruce1975-ship-it/boost-pitch` → branch `main`. Open with **6000.0.50f1** (or any Unity 6). Then **Boost Pitch → MCP → Assemble Playable Arena**.
+This repo **is** a Unity 6 project (`Assets/` + `ProjectSettings/` on `main`). Editor **6000.5.0f1** (the version on BrickBruceOrbit). Hub: **Add project from disk** if clone fails, then pick **6000.5.0f1** in the Editor version column. Menu **Boost Pitch → MCP → Assemble Playable Arena**.
+
 
 Contract scripts live in `Assets/BoostPitch.Sim/` (same numbers as `src/game/sim.ts`):
 

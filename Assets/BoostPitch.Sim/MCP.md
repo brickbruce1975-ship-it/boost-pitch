@@ -4,7 +4,7 @@ Source: official Unity video [Get started with Unity MCP](https://www.youtube.co
 
 **Status:** C# and Hub project files are in-repo (`runtime_verified` path). Live Editor Play Mode is `architecture_only` until you open this repo in Unity 6. `true_agi` remains false.
 
-**Unity Hub:** Add project from repository → GitHub `brickbruce1975-ship-it/boost-pitch` → branch `main`. The Unity project is the **repo root** (`Assets/` + `ProjectSettings/`). Editor **6000.0.50f1** (any Unity 6 works; Hub may upgrade). Then **Boost Pitch → MCP → Assemble Playable Arena**.
+**Unity Hub:** The Unity project is the **repo root** (`Assets/` + `ProjectSettings/`). Editor **6000.5.0f1** (same as BrickBruceOrbit). If Hub says Missing Editor version, use the Editor version dropdown → **6000.5.0f1**. Then **Boost Pitch → MCP → Assemble Playable Arena**.
 
 
 ## What 3:31 actually shows
