@@ -2,7 +2,10 @@
 
 Source: official Unity video [Get started with Unity MCP](https://www.youtube.com/watch?v=2sswkdV1y3c&t=211s) (Unity, 11 May 2026) + [docs](https://docs.unity3d.com/Packages/com.unity.ai.assistant@2.0/manual/unity-mcp-overview.html).
 
-**Status:** `architecture_only` for a live Editor bridge (this sandbox has no Unity process). C# below is the drop-in that an MCP agent should assemble. `true_agi` remains false.
+**Status:** C# and Hub project files are in-repo (`runtime_verified` path). Live Editor Play Mode is `architecture_only` until you open this repo in Unity 6. `true_agi` remains false.
+
+**Unity Hub:** Add project from repository → GitHub `brickbruce1975-ship-it/boost-pitch` → branch `main`. The Unity project is the **repo root** (`Assets/` + `ProjectSettings/`). Editor **6000.0.50f1** (any Unity 6 works; Hub may upgrade). Then **Boost Pitch → MCP → Assemble Playable Arena**.
+
 
 ## What 3:31 actually shows
 

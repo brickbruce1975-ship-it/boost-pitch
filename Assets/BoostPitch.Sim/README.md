@@ -20,11 +20,11 @@ Keep numbers and field names in lockstep. Do not invent a second physics story.
 
 ## Before you hit Play (checklist)
 
-1. Unity **6** + official **AI Assistant** MCP ([MCP.md](MCP.md)). No third-party MCP packages.
-2. Drop this folder under `Assets/BoostPitch.Sim/`.
+1. Open this **repo root** in Unity Hub (it is the Unity project: `Assets/` + `ProjectSettings/`).
+2. Unity **6** (6000.0.50f1 or any 6000.0.x) + official **AI Assistant** MCP ([MCP.md](MCP.md)).
 3. Menu **Boost Pitch → MCP → Assemble Playable Arena** (or paste [McpKickoffPrompt.md](McpKickoffPrompt.md)).
-4. Full album masters in `Resources/OrbitAudio/` (`suit-up` … `in-the-glass`). No DistroKid 30s loops.
-5. Active Input Handling = **Both**.
+4. Album clips are already in `Resources/OrbitAudio/` (suit-up … in-the-glass). Play once, no loop.
+5. Active Input Handling = **Both** (set in ProjectSettings).
 6. Prove **A = left** from the chase camera while holding W.
 7. Only then attach `OrbitMatchRunner` for ball / bot / goals.
 
@@ -44,14 +44,8 @@ Playable pieces:
 
 ## Suggested Unity layout
 
-1. Create a **Unity 6** URP (or HDRP) 3D project.
-2. Install **AI Assistant** so Unity MCP is present.
-3. Drop this folder under `Assets/BoostPitch.Sim/`.
-4. Assemble the arena (menu or MCP prompt).
-5. Drop full album masters in `Assets/Resources/OrbitAudio/` (`suit-up.wav` …).
-6. Fixed timestep `1/120`. Arcade first — **no WheelCollider**.
-7. Default driver is **Brick Bruce** / Orbit livery.
-8. Multiplayer: the web build is **casual P2P**. Unity Netcode **only** with a server. Do not copy the P2P trust model into ranked play.
+This repository root **is** the Unity 6 project. Hub: Add project from repository → `boost-pitch` → `main`.
+
 
 ## Quantum kickoff (educational)
 

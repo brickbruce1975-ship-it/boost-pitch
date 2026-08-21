@@ -47,21 +47,20 @@ Friends share a room code. The browser mesh is WebRTC P2P: game ticks go peer-to
 
 React 19 · TanStack Start · three.js · Tailwind v4 · Better Auth (optional sign-in) · WebRTC P2P
 
-## Unity prep
+## Unity (Hub)
 
-`unity/BoostPitch.Sim/` is the C# contract that mirrors `src/game/types.ts` + `src/game/sim.ts`:
+This repo **is** a Unity 6 project (`Assets/` + `ProjectSettings/` on `main`). In Unity Hub: **Add → Add project from repository** → `brickbruce1975-ship-it/boost-pitch` → branch `main`. Open with **6000.0.50f1** (or any Unity 6). Then **Boost Pitch → MCP → Assemble Playable Arena**.
 
-- `SimConstants.cs` — field extents, `Dt = 1/120`, Brick Bruce defaults, Pacejka + clutch LSD
-- `WorldState.cs` — car / ball / pads / actions / snapshot
-- `WorldStepper.cs` — ported match tick (same order as `stepWorld`)
-- `OrbitCoupeDriver.cs` — Rigidbody adapter that **calls** `WorldStepper.ApplyTires` (3:31 MCP path)
-- `OrbitMatchRunner.cs` — optional full match host
-- `QuantumKickoff.cs` — same 2-qubit H+CNOT impulse map
-- `schema/world.schema.json` — wire snapshot
+Contract scripts live in `Assets/BoostPitch.Sim/` (same numbers as `src/game/sim.ts`):
 
-Drop the folder under `Assets/` in a Unity 6 URP/HDRP project. Keep numbers in lockstep with the browser. **No WheelCollider.** Live Editor Play Mode is still `architecture_only` until you assemble it locally.
+- `SimConstants.cs` — field, `Dt = 1/120`, Pacejka + clutch LSD
+- `WorldStepper.cs` — match tick
+- `OrbitCoupeDriver.cs` — Rigidbody adapter (3:31 path, **A = left**, no WheelCollider)
+- `OrbitMatchRunner.cs` — full match host
+- `QuantumKickoff.cs` — H+CNOT, `simulation_only`
 
-**Unity MCP** (official AI Assistant, Unity 6): [unity/BoostPitch.Sim/MCP.md](unity/BoostPitch.Sim/MCP.md). Pattern from Unity’s 3:31 demo — empty coupe + Rigidbody + `OrbitCoupeDriver`, not a second physics stack. Menu: **Boost Pitch → MCP → Assemble Playable Arena**.
+Active Input Handling = Both. Album clips are in `Assets/BoostPitch.Sim/Resources/OrbitAudio/`. MCP: [Assets/BoostPitch.Sim/MCP.md](Assets/BoostPitch.Sim/MCP.md).
+
 
 
 ## Educational kickoff sampler
