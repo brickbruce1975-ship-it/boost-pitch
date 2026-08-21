@@ -3,6 +3,7 @@ using UnityEngine;
 namespace BoostPitch.Sim
 {
     /// <summary>Builds the Boost Pitch field from SimConstants. Safe for MCP to add to an empty scene.</summary>
+    [DefaultExecutionOrder(-50)]
     public class PitchArenaBuilder : MonoBehaviour
     {
         void Awake() => Build();

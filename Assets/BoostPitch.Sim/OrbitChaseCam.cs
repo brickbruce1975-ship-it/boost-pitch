@@ -17,6 +17,11 @@ namespace BoostPitch.Sim
         void Awake()
         {
             _cam = GetComponent<Camera>();
+            if (!Target)
+            {
+                var d = FindFirstObjectByType<OrbitCoupeDriver>();
+                if (d) Target = d.transform;
+            }
         }
 
         public void AddTrauma(float v)

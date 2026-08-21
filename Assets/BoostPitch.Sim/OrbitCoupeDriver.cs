@@ -37,6 +37,7 @@ namespace BoostPitch.Sim
             _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             Time.fixedDeltaTime = SimConstants.Dt;
             _car.name = DriverName;
+            OrbitCoupeVisual.Attach(transform);
         }
 
         void Update()
