@@ -1,0 +1,80 @@
+{
+  "product": "Boost Pitch",
+  "contractVersion": 1,
+  "source": "src/game/types.ts + src/game/sim.ts + public/orbit/music/album.json",
+  "coordinateSystem": {
+    "up": "+Y",
+    "yawZeroForward": "-Z",
+    "steerPositive": "A-left"
+  },
+  "field": {
+    "halfW": 40,
+    "halfL": 56,
+    "wallH": 16,
+    "goalHalfW": 9,
+    "goalH": 7.2,
+    "goalDepth": 5.5
+  },
+  "physics": {
+    "ballRadius": 1.55,
+    "carRadius": 1.12,
+    "carHeight": 0.42,
+    "dt": 0.008333333333333333,
+    "matchSeconds": 180,
+    "maxCars": 8,
+    "model": "combined-slip Pacejka with two-patch clutch LSD",
+    "wheelCollider": false
+  },
+  "identity": {
+    "defaultDriver": "Brick Bruce",
+    "defaultLivery": "brick"
+  },
+  "audio": {
+    "album": "The Orbit",
+    "artist": "Brick Bruce",
+    "loop": false,
+    "fadeSec": 2.5,
+    "tracks": [
+      {
+        "id": "suit-up",
+        "title": "Suit Up",
+        "src": "/orbit/music/suit-up.mp3"
+      },
+      {
+        "id": "float-easy",
+        "title": "Float Easy",
+        "src": "/orbit/music/float-easy.mp3"
+      },
+      {
+        "id": "spaceage",
+        "title": "Spaceage",
+        "src": "/orbit/music/spaceage.mp3"
+      },
+      {
+        "id": "astronaut",
+        "title": "Astronaut",
+        "src": "/orbit/music/astronaut.mp3"
+      },
+      {
+        "id": "witness",
+        "title": "Witness",
+        "src": "/orbit/music/witness.mp3"
+      },
+      {
+        "id": "the-shimmer",
+        "title": "The Shimmer",
+        "src": "/orbit/music/the-shimmer.mp3"
+      },
+      {
+        "id": "in-the-glass",
+        "title": "In the Glass",
+        "src": "/orbit/music/in-the-glass.mp3"
+      }
+    ]
+  },
+  "quantumKickoff": {
+    "mode": "simulation_only",
+    "source": "src/game/quantumKickoff.ts"
+  },
+  "true_agi": false
+}

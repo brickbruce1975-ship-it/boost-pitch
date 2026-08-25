@@ -1,54 +1,34 @@
-# Boost Pitch → Unity
+# Boost Pitch Unity Runtime Contract
 
-This folder is the **Unity-facing contract** for the browser sim in `src/game/sim.ts`.
-Keep numbers and field names in lockstep. Do not invent a second physics story.
+This folder is the **Unity-primary runtime** for Boost Pitch. The browser implementation remains the reference implementation for deterministic gameplay parity, presentation intent, and first-run acceptance tests; Unity is the shippable runtime target for production builds and the forward path to Unreal Engine.
 
-**Status:** `architecture_only` for a live Editor / Play Mode pass (no Unity process in the sandbox). C# below is the drop-in an MCP agent should assemble. `true_agi` remains false. Browser remains the runtime-verified source of truth.
+> The repository root is a Unity 6 project. Open the root in Unity Hub, then use `Assets/BoostPitch.Sim/PitchArena.unity` for the runtime scene. Do not create a second tire model: `WorldStepper` is the only vehicle physics story and mirrors `src/game/sim.ts`.
 
-## Port map
+## Pipeline contract
 
-| Browser | Unity |
-|---|---|
-| `src/game/types.ts` `FIELD`, `DT`, Brick Bruce | `SimConstants.cs` |
-| `src/game/sim.ts` `stepWorld` | `WorldStepper.cs` (ported; call at `Dt = 1/120`) |
-| `src/game/sim.ts` Pacejka + clutch LSD (two rear patches, A = left) | `WorldStepper.ApplyTires` — `OrbitCoupeDriver` is a Rigidbody adapter, not a second model |
-| Match host | `OrbitMatchRunner.cs` |
-| `src/game/quantumKickoff.ts` | `QuantumKickoff.cs` + optional PennyLane sidecar |
-| `src/game/orbitMusic.ts` | `OrbitAlbumPlayer.cs` (same 7 ids, no loop) |
-| `Car` / `Ball` / `Actions` | `WorldState.cs` |
-| three.js +Y up, yaw 0 = −Z | Same (Unity is +Y up) |
+| Concern | Browser reference | Unity runtime | Synchronization gate |
+|---|---|---|---|
+| Shared dimensions and timing | `src/game/types.ts` | `SimConstants.cs` | `npm run unity:contract:validate` |
+| Vehicle physics | `src/game/sim.ts` | `WorldStepper.cs` | Pacejka + two-patch clutch LSD parity |
+| Match state | `World` / `Snapshot` | `WorldSnapshot` | `schema/world.schema.json` |
+| Kickoff sampler | `src/game/quantumKickoff.ts` | `QuantumKickoff.cs` | `simulation_only`; never a QPU claim |
+| Album order and playback | `src/game/orbitMusic.ts` + `public/orbit/music/album.json` | `OrbitAlbumPlayer.cs` | seven tracks, play once, `loop=false` |
+| Look and controls | three.js chase camera and input | `OrbitCoupeVisual`, `OrbitChaseCam`, `OrbitMatchRunner` | A = left, D = right, W = forward |
 
-## Before you hit Play (checklist)
+The generated file `Assets/BoostPitch.Sim/schema/browser-contract.json` is produced from browser sources by `npm run unity:contract:export`. It is a reviewable, machine-readable handoff artifact; it is not hand-edited. Validation compares it against Unity constants and locked invariants.
 
-1. Open this **repo root** in Unity Hub (it is the Unity project: `Assets/` + `ProjectSettings/`).
-2. Unity **6.5 (6000.5.0f1)** — same editor as BrickBruceOrbit — + official **AI Assistant** MCP ([MCP.md](MCP.md)).
-3. Menu **Boost Pitch → MCP → Assemble Playable Arena** (or paste [McpKickoffPrompt.md](McpKickoffPrompt.md)).
-4. Album clips are already in `Resources/OrbitAudio/` (suit-up … in-the-glass). Play once, no loop.
-5. Active Input Handling = **Both** (set in ProjectSettings).
-6. Prove **A = left** from the chase camera while holding W.
-7. Only then attach `OrbitMatchRunner` for ball / bot / goals.
+## Runtime assembly
 
-## Unity MCP (official, Unity 6)
+The playable path is `PitchArena` with `PitchArenaBuilder`, `OrbitMatchRunner`, a player coupe using `OrbitCoupeDriver` and `OrbitCoupeVisual`, `OrbitChaseCam`, and `OrbitAlbumPlayer`. `OrbitMatchRunner` owns the fixed simulation tick, match lifecycle, score, ball, bot, and transform synchronization. `OrbitCoupeDriver` is an adapter for the shared sim and does not use WheelCollider or a competing physics model.
 
-Follow [MCP.md](MCP.md). Pattern from Unity’s own video at 3:31: empty object → agent attaches script + Rigidbody → Play Mode.
+Unity uses the same coordinate convention as the browser: +Y is up, yaw 0 faces world −Z, and positive steer is A / left from the chase camera. The default player is Brick Bruce in the black Orbit coupe with cyan bars. The album is Suit Up, Float Easy, Spaceage, Astronaut, Witness, The Shimmer, In the Glass; clips never loop and the final track stops.
 
-Playable pieces:
+## Build and handoff workflow
 
-- `OrbitCoupeDriver` — Rigidbody adapter, **A = left**, tires from `WorldStepper`
-- `OrbitCoupeVisual` — black coupe, cyan bars
-- `OrbitChaseCam`
-- `OrbitAlbumPlayer` — The Orbit, Suit Up first
-- `PitchArenaBuilder` — field from `SimConstants`
-- `WorldStepper` — match tick (cars, ball, pads, score)
-- `OrbitMatchRunner` — MonoBehaviour host for that tick
+Run `npm install`, then `npm run unity:contract:export`, `npm run unity:contract:validate`, `npm run typecheck`, `node scripts/brand-check.mjs`, and the browser controls test. Open the repository root in Unity 6.5, allow the Asset Database to import, open `Assets/BoostPitch.Sim/PitchArena.unity`, and enter Play Mode. The Unity acceptance pass must prove cold-load kickoff, W launch, A-left / D-right, jump, boost, landing, ball contact, goal reset, and album playback without looping.
 
-## Suggested Unity layout
+For Unreal preparation, treat `WorldState.cs`, `WorldStepper.cs`, `SimConstants.cs`, and `schema/world.schema.json` as the engine-neutral simulation boundary. Unity presentation components are adapters around that boundary. Future Unreal work should consume the same serialized state and contract rather than fork gameplay tuning.
 
-This repository root **is** the Unity 6 project. Hub: Add project from repository → `boost-pitch` → `main`.
+## Validation status
 
-
-## Quantum kickoff (educational)
-
-`QuantumKickoff.cs` mirrors the 2-qubit H + CNOT sampler used in the browser.
-A PennyLane sidecar lives at `../tools/pennylane_kickoff.py` (`default.qubit` mapping table).
-Tagged **simulation_only** — not a QPU job.
+The repository can validate contract parity and browser behavior in the sandbox. Unity Editor / Play Mode validation requires a machine with Unity 6.5 installed; no claim of Unity runtime execution is made when that editor is unavailable.

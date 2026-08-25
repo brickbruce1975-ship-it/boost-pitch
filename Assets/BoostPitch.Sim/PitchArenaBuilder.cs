@@ -6,7 +6,22 @@ namespace BoostPitch.Sim
     [DefaultExecutionOrder(-50)]
     public class PitchArenaBuilder : MonoBehaviour
     {
-        void Awake() => Build();
+        void Awake()
+        {
+            Build();
+            EnsureRuntimeWiring();
+        }
+
+        void EnsureRuntimeWiring()
+        {
+            var runner = GetComponent<OrbitMatchRunner>() ?? gameObject.AddComponent<OrbitMatchRunner>();
+            var coupe = transform.Find("OrbitCoupe");
+            var ball = transform.Find("Ball");
+            if (!coupe) coupe = GameObject.Find("OrbitCoupe")?.transform;
+            if (!ball) ball = GameObject.Find("Ball")?.transform;
+            runner.CarViews = coupe ? new[] { coupe } : new Transform[0];
+            runner.BallView = ball;
+        }
 
         public void Build()
         {

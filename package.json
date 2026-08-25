@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test 'scripts/**/*.test.mjs'",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "unity:contract:export": "node scripts/export-unity-contract.mjs",
+    "unity:contract:validate": "node scripts/validate-unity-contract.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

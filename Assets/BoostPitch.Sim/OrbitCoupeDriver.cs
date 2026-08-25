@@ -3,8 +3,8 @@ using UnityEngine;
 namespace BoostPitch.Sim
 {
     /// <summary>
-    /// MCP analog of the official Unity spaceship demo (video 3:31).
-    /// Empty coupe + this script + Rigidbody = driveable Orbit car.
+    /// Isolated drive adapter for MCP smoke tests. In a full match, OrbitMatchRunner
+    /// owns the primary WorldStepper state and this component disables itself.
     /// Physics come from WorldStepper (same as src/game/sim.ts). A = left. No WheelCollider.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
@@ -30,6 +30,13 @@ namespace BoostPitch.Sim
 
         void Awake()
         {
+            // OrbitMatchRunner owns the primary world simulation. This component remains
+            // available for isolated MCP drive tests, but never competes with the match.
+            if (FindFirstObjectByType<OrbitMatchRunner>() != null)
+            {
+                enabled = false;
+                return;
+            }
             _rb = GetComponent<Rigidbody>();
             _rb.mass = SimConstants.Mass;
             _rb.interpolation = RigidbodyInterpolation.Interpolate;

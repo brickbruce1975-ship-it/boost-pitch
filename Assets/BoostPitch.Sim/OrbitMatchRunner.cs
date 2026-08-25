@@ -3,15 +3,18 @@ using UnityEngine;
 namespace BoostPitch.Sim
 {
     /// <summary>
-    /// Headless match tick on WorldStepper. Optional Transform views for cars/ball.
-    /// Attach to an empty GameObject after the 3:31 coupe path if you want a full game,
-    /// not just a driveable body. architecture_only until Play Mode in the Editor.
+    /// Primary Unity runtime host for the engine-neutral WorldStepper simulation.
+    /// It owns the fixed tick, kickoff, ball, bot, score, and view synchronization.
+    /// Presentation components consume this state; they do not create a second physics story.
     /// </summary>
+    [DefaultExecutionOrder(-20)]
     public class OrbitMatchRunner : MonoBehaviour
     {
         public Transform[] CarViews;
         public Transform BallView;
         public string DriverName = SimConstants.DefaultDriver;
+        public bool AutoKickOff = true;
+        public bool PauseWhenUnfocused = true;
         WorldSnapshot _world;
 
         void Awake()
@@ -29,13 +32,15 @@ namespace BoostPitch.Sim
 
         void Start()
         {
-            if (_world == null) KickOff();
+            if (AutoKickOff && _world == null) KickOff();
+            SyncViews();
         }
 
         void FixedUpdate()
         {
             if (_world == null || _world.phase == "menu" || _world.phase == "over") return;
-            WorldStepper.Step(_world, ReadActions(), Time.fixedDeltaTime);
+            if (PauseWhenUnfocused && !Application.isFocused) return;
+            WorldStepper.Step(_world, ReadActions(), SimConstants.Dt);
             SyncViews();
         }
 
@@ -55,6 +60,18 @@ namespace BoostPitch.Sim
                 a.pitch = a.throttle;
             }
             return a;
+        }
+
+        public void SetDriverIdentity(string driverName)
+        {
+            DriverName = string.IsNullOrWhiteSpace(driverName) ? SimConstants.DefaultDriver : driverName.Trim();
+            if (_world?.cars != null && _world.cars.Length > 0) _world.cars[0].name = DriverName;
+        }
+
+        public void RestartMatch()
+        {
+            KickOff();
+            SyncViews();
         }
 
         void SyncViews()
