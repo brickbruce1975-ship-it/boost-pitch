@@ -493,6 +493,7 @@ function OnlineLobby({
   const joinedMatch = useRef(false);
   const [ready, setReady] = useState(false);
   const [readyIds, setReadyIds] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
 
   const hostId = useMemo(() => {
     const ids = [p2p.selfId, ...p2p.peers.map((p) => p.id)].sort();
@@ -596,9 +597,26 @@ function OnlineLobby({
     >
       <div className="w-full max-w-sm rounded-lg border border-amber/30 bg-surface p-5 text-left shadow-[0_0_40px_rgba(255,138,61,0.08)]">
         <p className="font-display text-[11px] tracking-[0.3em] text-amber uppercase">Casual room</p>
-        <p className="mt-1 font-display text-3xl font-bold tracking-[0.25em] text-fg">{room}</p>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <p className="font-display text-3xl font-bold tracking-[0.25em] text-fg">{room}</p>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard?.writeText(room);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1400);
+              } catch {
+                setCopied(false);
+              }
+            }}
+            className="rounded border border-line/20 px-2 py-1 font-display text-[10px] tracking-widest text-muted uppercase hover:border-cyan/50 hover:text-cyan"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
         <p className="mt-2 text-xs text-muted">
-          {p2p.joined ? "Signaling live" : "Connecting…"} · {isHost ? "You are host" : "Host is another peer"}
+          {p2p.joined ? "Signaling live" : "Connecting…"} · {isHost ? "You are host" : "Host is another peer"} · {p2p.peers.length + 1}/{MAX_CARS}
         </p>
         <ul className="mt-3 space-y-1 text-sm">
           <li className="text-amber">

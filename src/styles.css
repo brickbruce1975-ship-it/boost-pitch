@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #071018;
-  --color-surface: #0c1a24;
-  --color-raised: #122633;
-  --color-line: #d6e4ee;
-  --color-fg: #e8f2f6;
-  --color-muted: #8aa3b0;
+  --color-ink: #10202a;
+  --color-surface: #183541;
+  --color-raised: #214653;
+  --color-line: #e6f7fb;
+  --color-fg: #f4fbfd;
+  --color-muted: #b0c9d0;
   --color-cyan: #2ee6d6;
   --color-amber: #ff8a3d;
   --color-danger: #ff5d6c;
@@ -62,5 +62,5 @@
   pointer-events: none;
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 58%, rgba(7, 16, 24, 0.32) 100%);
+  background: radial-gradient(ellipse at center, transparent 62%, rgba(16, 32, 42, 0.18) 100%);
 }

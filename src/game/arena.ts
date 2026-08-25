@@ -40,10 +40,10 @@ function skyTexture() {
   c.height = 512;
   const g = c.getContext("2d")!;
   const grd = g.createLinearGradient(0, 0, 0, 512);
-  grd.addColorStop(0, "#071018");
-  grd.addColorStop(0.45, "#122033");
-  grd.addColorStop(0.72, "#3a1e18");
-  grd.addColorStop(1, "#ff8a3d");
+  grd.addColorStop(0, "#16334c");
+  grd.addColorStop(0.45, "#2d647b");
+  grd.addColorStop(0.72, "#d47c4a");
+  grd.addColorStop(1, "#ffd08a");
   g.fillStyle = grd;
   g.fillRect(0, 0, 8, 512);
   const tex = new THREE.CanvasTexture(c);
@@ -156,7 +156,7 @@ export function makeArena(scene: THREE.Scene) {
   circle.position.y = 0.04;
   scene.add(circle);
 
-  const concrete = new THREE.MeshStandardMaterial({ color: 0x121820, roughness: 0.88, metalness: 0.08 });
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x243b45, roughness: 0.88, metalness: 0.08 });
   const bowlR = halfW + 14;
   for (let row = 0; row < 6; row++) {
     const y = 1.2 + row * 1.55;
@@ -194,6 +194,69 @@ export function makeArena(scene: THREE.Scene) {
   }
   seats.count = n;
   scene.add(seats);
+
+  // Dense, readable spectator layer: instanced bodies and light sticks keep the arena lively
+  // without heavyweight models, and the seeded pattern stays stable for browser/Unity captures.
+  const crowdCount = 520;
+  const crowdBody = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.18, 0.25, 0.9, 6),
+    new THREE.MeshStandardMaterial({ color: 0x2a4550, roughness: 0.78, vertexColors: true }),
+    crowdCount,
+  );
+  const crowdHead = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.22, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xd8b39b, roughness: 0.92, vertexColors: true }),
+    crowdCount,
+  );
+  const crowdStick = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.11, 0.92, 0.11),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false }),
+    crowdCount,
+  );
+  crowdBody.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(crowdCount * 3), 3);
+  crowdHead.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(crowdCount * 3), 3);
+  crowdStick.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(crowdCount * 3), 3);
+  crowdBody.castShadow = true;
+  crowdHead.castShadow = true;
+  const crowd = Array.from({ length: crowdCount }, (_, i) => {
+    const row = i % 8;
+    const count = 64 + row * 10;
+    const a = ((i * 37) % count) / count * Math.PI * 2;
+    const r = halfW + 10 + row * 2.0;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r * 1.16;
+    const y = 2.5 + row * 1.35;
+    const color = z > 0 ? 0x27d9d0 : 0xffb45f;
+    return { x, y, z, phase: (i * 0.71) % (Math.PI * 2), color };
+  });
+  const crowdDummy = new THREE.Object3D();
+  const crowdColor = new THREE.Color();
+  const setCrowdInstance = (i: number, t: number) => {
+    const c = crowd[i];
+    const wave = 0.06 + Math.max(0, Math.sin(t * 2.4 + c.phase)) * 0.18;
+    crowdDummy.position.set(c.x, c.y + wave, c.z);
+    crowdDummy.rotation.set(0, Math.atan2(-c.x, -c.z), Math.sin(t * 1.7 + c.phase) * 0.08);
+    crowdDummy.scale.set(1, 0.9 + wave * 0.7, 1);
+    crowdDummy.updateMatrix();
+    crowdBody.setMatrixAt(i, crowdDummy.matrix);
+    crowdColor.setHex(c.color);
+    crowdBody.setColorAt(i, crowdColor);
+    crowdDummy.position.y += 0.57 + wave * 0.2;
+    crowdDummy.rotation.z *= 0.45;
+    crowdDummy.scale.setScalar(0.9 + wave * 0.25);
+    crowdDummy.updateMatrix();
+    crowdHead.setMatrixAt(i, crowdDummy.matrix);
+    crowdColor.setHex(c.z > 0 ? 0xefd4c2 : 0xdcbca6);
+    crowdHead.setColorAt(i, crowdColor);
+    crowdDummy.position.y += 0.44 + Math.max(0, Math.sin(t * 3.2 + c.phase)) * 0.15;
+    crowdDummy.scale.set(1, 1.7, 1);
+    crowdDummy.updateMatrix();
+    crowdStick.setMatrixAt(i, crowdDummy.matrix);
+    crowdColor.setHex(c.color);
+    crowdStick.setColorAt(i, crowdColor);
+  };
+  for (let i = 0; i < crowd.length; i++) setCrowdInstance(i, 0);
+  scene.add(crowdBody, crowdHead, crowdStick);
 
   const towerMat = new THREE.MeshStandardMaterial({ color: 0x1c242c, metalness: 0.55, roughness: 0.35 });
   for (const [x, z] of [
@@ -337,5 +400,15 @@ export function makeArena(scene: THREE.Scene) {
   }
   paintJumbo(0, 0, "3:00", "BOOST PITCH  ·  THE ORBIT");
 
-  return { paintJumbo };
+  function tick(time: number) {
+    for (let i = 0; i < crowd.length; i++) setCrowdInstance(i, time);
+    crowdBody.instanceMatrix.needsUpdate = true;
+    crowdHead.instanceMatrix.needsUpdate = true;
+    crowdStick.instanceMatrix.needsUpdate = true;
+    if (crowdBody.instanceColor) crowdBody.instanceColor.needsUpdate = true;
+    if (crowdHead.instanceColor) crowdHead.instanceColor.needsUpdate = true;
+    if (crowdStick.instanceColor) crowdStick.instanceColor.needsUpdate = true;
+  }
+
+  return { paintJumbo, tick };
 }

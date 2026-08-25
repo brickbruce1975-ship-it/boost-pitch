@@ -123,10 +123,10 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.28;
+  renderer.toneMappingExposure = 1.08;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x1c1814, 110, 240);
+  scene.fog = new THREE.Fog(0x496d78, 125, 260);
 
   const camera = new THREE.PerspectiveCamera(66, 16 / 9, 0.12, 420);
   camera.position.set(0, 18, 42);
@@ -138,8 +138,8 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   scene.environmentIntensity = 0.55;
   pmrem.dispose();
 
-  scene.add(new THREE.HemisphereLight(0xffd0b4, 0x243028, 0.72));
-  const sun = new THREE.DirectionalLight(0xffe0c0, 1.7);
+  scene.add(new THREE.HemisphereLight(0xffe6cf, 0x35616a, 1.05));
+  const sun = new THREE.DirectionalLight(0xffe7c9, 1.9);
   sun.position.set(22, 48, 16);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -308,6 +308,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   function syncVisuals(dt: number, now: number, pulses: FxPulse[]) {
     consumeFx(pulses);
     fx.tick(dt);
+    arena.tick(now);
 
     carMeshes.forEach((m, i) => {
       const car = world.cars[i];
