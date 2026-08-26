@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Orbit Classic — black coupe livery</title>
+  <desc id="desc">Black retro-futurist coupe with cyan light bars, cyan underglow, and silver trim.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#102a35"/><stop offset="1" stop-color="#060a0c"/></linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2a3337"/><stop offset="0.38" stop-color="#141210"/><stop offset="1" stop-color="#050607"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#62dfe2" stop-opacity="0.45"/><stop offset="0.35" stop-color="#0d2027" stop-opacity="0.85"/><stop offset="1" stop-color="#04090c"/></linearGradient>
+    <filter id="glow" x="-30%" y="-100%" width="160%" height="300%"><feGaussianBlur stdDeviation="16" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%"><feGaussianBlur stdDeviation="20"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#night)"/>
+  <path d="M0 662C266 583 448 595 698 676c247 80 517 74 902-44v268H0z" fill="#080e11"/>
+  <g opacity="0.32" stroke="#2ee6d6" stroke-width="2"><path d="M0 702h1600"/><path d="M0 757h1600"/><path d="M0 812h1600"/><path d="M180 617v283M420 612v288M660 623v277M900 635v265M1140 624v276M1380 606v294"/></g>
+  <ellipse cx="800" cy="700" rx="556" ry="76" fill="#000" opacity="0.72" filter="url(#shadow)"/>
+  <path d="M323 598c38-84 141-136 282-147l311-21c114-7 222 27 299 103l99 103-75 66H339l-74-41z" fill="url(#body)" stroke="#6e7d80" stroke-width="6"/>
+  <path d="M523 451l131-104 285-6 154 119-231 9z" fill="url(#glass)" stroke="#9ec9ce" stroke-opacity="0.7" stroke-width="5"/>
+  <path d="M692 349v109M932 344v114" stroke="#1b2528" stroke-width="12"/>
+  <path d="M350 604h880l-36 62H382z" fill="#0c0e0f" stroke="#b9c6c8" stroke-width="6"/>
+  <path d="M414 559c52-63 142-94 250-101l251-15c105-6 205 21 279 78l-67 10-342-12-314 23z" fill="#202a2d" opacity="0.84"/>
+  <path d="M374 618h214M998 618h198" stroke="#2ee6d6" stroke-width="18" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M390 619h190M1012 619h170" stroke="#d9ffff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M327 643h906" stroke="#2ee6d6" stroke-width="14" stroke-linecap="round" opacity="0.94" filter="url(#glow)"/>
+  <path d="M346 665h871" stroke="#2ee6d6" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+  <g fill="#111516" stroke="#c5cdd3" stroke-width="10"><circle cx="500" cy="683" r="74"/><circle cx="1112" cy="683" r="74"/></g>
+  <g fill="#20292b" stroke="#07090a" stroke-width="24"><circle cx="500" cy="683" r="46"/><circle cx="1112" cy="683" r="46"/></g>
+  <g fill="#2ee6d6"><circle cx="500" cy="683" r="9"/><circle cx="1112" cy="683" r="9"/></g>
+  <path d="M362 578l-70 34M1230 570l83 40" stroke="#c5cdd3" stroke-width="10" stroke-linecap="round"/>
+  <path d="M508 474c110-34 313-53 456-16" fill="none" stroke="#2ee6d6" stroke-opacity="0.35" stroke-width="8"/>
+  <rect x="72" y="72" width="240" height="10" rx="5" fill="#2ee6d6" filter="url(#glow)"/>
+  <rect x="1288" y="818" width="240" height="10" rx="5" fill="#2ee6d6" filter="url(#glow)"/>
+</svg>

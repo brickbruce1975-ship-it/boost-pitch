@@ -5,6 +5,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { createEngine, type Engine, type NetBridge } from "@/game/engine";
 import { setAnalog, setTap } from "@/game/input";
 import { BRICK_BRUCE, MATCH_SECONDS, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "@/game/types";
+import { BRICK_BRUCE_THEMES, DRIVER_THEME_IDS, themeFor, type DriverThemeId } from "@/game/driverProfiles";
 import { assignTeams, type CarWire, type HostWire } from "@/game/sim";
 import { useP2PRoom, type PeerInfo } from "@/lib/multiplayer";
 import { OrbitSkyline } from "@/components/OrbitSkyline";
@@ -84,7 +85,7 @@ export function GameView() {
   });
   const [help, setHelp] = useState(false);
   const [name, setName] = useState(BRICK_BRUCE.name);
-  const [livery, setLivery] = useState<Livery>(BRICK_BRUCE.livery);
+  const [themeId, setThemeId] = useState<DriverThemeId>("orbit_classic");
   const [joinCode, setJoinCode] = useState("");
   const [session, setSession] = useState<{ room: string; name: string; livery: Livery } | null>(null);
   const { user, isPending } = useCurrentUserState();
@@ -107,6 +108,27 @@ export function GameView() {
       engineRef.current = null;
     };
   }, []);
+
+  const theme = themeFor(themeId);
+  const livery = theme.defaultLivery;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.driverTheme = themeId;
+    root.style.setProperty("--bp-theme-accent", theme.css.accent);
+    root.style.setProperty("--bp-theme-accent-soft", theme.css.accentSoft);
+    root.style.setProperty("--bp-theme-accent-ink", theme.css.accentInk);
+    root.style.setProperty("--bp-theme-surface", theme.css.surfaceTint);
+    root.style.setProperty("--bp-theme-line", theme.css.lineTint);
+    return () => {
+      delete root.dataset.driverTheme;
+      root.style.removeProperty("--bp-theme-accent");
+      root.style.removeProperty("--bp-theme-accent-soft");
+      root.style.removeProperty("--bp-theme-accent-ink");
+      root.style.removeProperty("--bp-theme-surface");
+      root.style.removeProperty("--bp-theme-line");
+    };
+  }, [theme, themeId]);
 
   function kickOff() {
     netRef.current.role = "solo";
@@ -319,20 +341,31 @@ export function GameView() {
                 className="mt-1 w-full rounded-md border border-line/15 bg-raised px-3 py-2 font-display text-lg text-fg outline-none focus:border-cyan/50"
               />
             </label>
-            <div className="mt-3 flex gap-2">
-              {(["brick", "cyan", "amber", "slate"] as Livery[]).map((lv) => (
-                <button
-                  key={lv}
-                  type="button"
-                  onClick={() => setLivery(lv)}
-                  className={`flex-1 rounded-md border px-2 py-2 font-display text-xs tracking-widest uppercase ${
-                    livery === lv ? "border-cyan bg-cyan/15 text-cyan" : "border-line/15 text-muted"
-                  }`}
-                >
-                  {lv === "brick" ? "Orbit" : lv}
-                </button>
-              ))}
-            </div>
+            <section className="mt-4" aria-label="Brick Bruce theme selector">
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="font-display text-[11px] tracking-widest text-muted uppercase">Theme</span>
+                <span className="bp-theme-accent font-display text-[10px] tracking-widest uppercase">{theme.tagline}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {DRIVER_THEME_IDS.map((id) => {
+                  const option = BRICK_BRUCE_THEMES[id];
+                  const selected = id === themeId;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setThemeId(id)}
+                      aria-pressed={selected}
+                      className={`bp-theme-option text-left ${selected ? "is-selected" : ""}`}
+                    >
+                      <img src={option.portraitSrc} alt="" className="h-12 w-full object-cover object-top" />
+                      <span className="mt-2 block font-display text-[11px] tracking-widest uppercase">{option.themeName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted">Cosmetic theme only — same coupe, same controls, same physics.</p>
+            </section>
 
             <button
               type="button"

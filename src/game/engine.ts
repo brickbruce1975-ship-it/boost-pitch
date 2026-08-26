@@ -1,9 +1,4 @@
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { DT, FIELD, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "./types";
 import { attachInput, injectKeys, readActions, setSteerOverride } from "./input";
 import type { Actions } from "./types";
@@ -28,6 +23,36 @@ import { makeArena } from "./arena";
 import { createFx, type FxPulse } from "./fx";
 import { attachNameplate, disposeCar, makeCar, pulseCarLights, spinWheels, squashCar } from "./orbitCar";
 import { startAlbum } from "./orbitMusic";
+
+type EffectComposerInstance = import("three/addons/postprocessing/EffectComposer.js").EffectComposer;
+type UnrealBloomPassInstance = import("three/addons/postprocessing/UnrealBloomPass.js").UnrealBloomPass;
+
+type PostProcessingModules = {
+  EffectComposer: typeof import("three/addons/postprocessing/EffectComposer.js").EffectComposer;
+  OutputPass: typeof import("three/addons/postprocessing/OutputPass.js").OutputPass;
+  RenderPass: typeof import("three/addons/postprocessing/RenderPass.js").RenderPass;
+  UnrealBloomPass: typeof import("three/addons/postprocessing/UnrealBloomPass.js").UnrealBloomPass;
+  RoomEnvironment: typeof import("three/addons/environments/RoomEnvironment.js").RoomEnvironment;
+};
+
+let postProcessingModules: Promise<PostProcessingModules> | undefined;
+
+function loadPostProcessing(): Promise<PostProcessingModules> {
+  postProcessingModules ??= Promise.all([
+    import("three/addons/postprocessing/EffectComposer.js"),
+    import("three/addons/postprocessing/OutputPass.js"),
+    import("three/addons/postprocessing/RenderPass.js"),
+    import("three/addons/postprocessing/UnrealBloomPass.js"),
+    import("three/addons/environments/RoomEnvironment.js"),
+  ]).then(([composer, output, render, bloom, environment]) => ({
+    EffectComposer: composer.EffectComposer,
+    OutputPass: output.OutputPass,
+    RenderPass: render.RenderPass,
+    UnrealBloomPass: bloom.UnrealBloomPass,
+    RoomEnvironment: environment.RoomEnvironment,
+  }));
+  return postProcessingModules;
+}
 
 export type NetBridge = {
   role: "solo" | "host" | "client";
@@ -135,16 +160,15 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x496d78, 125, 260);
+  const postProcessCapable = !reduced && !lowPower;
+  let composer: EffectComposerInstance | null = null;
+  let bloom: UnrealBloomPassInstance | null = null;
+  let environment: THREE.Texture | null = null;
+  let disposed = false;
 
   const camera = new THREE.PerspectiveCamera(66, 16 / 9, 0.12, 420);
   camera.position.set(0, 18, 42);
   scene.add(camera);
-
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environment = env;
-  scene.environmentIntensity = 0.55;
-  pmrem.dispose();
 
   scene.add(new THREE.HemisphereLight(0xffe6cf, 0x35616a, 1.05));
   const sun = new THREE.DirectionalLight(0xffe7c9, 1.9);
@@ -224,13 +248,33 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   flashMesh.frustumCulled = false;
   camera.add(flashMesh);
 
-  const size = new THREE.Vector2();
-  renderer.getSize(size);
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(size, reduced || lowPower ? 0.08 : 0.3, 0.52, 0.72);
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
+  function enablePostProcessing() {
+    if (!postProcessCapable) return;
+    void loadPostProcessing()
+      .then(({ EffectComposer, OutputPass, RenderPass, RoomEnvironment, UnrealBloomPass }) => {
+        if (disposed) return;
+        const size = new THREE.Vector2();
+        renderer.getSize(size);
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        scene.environment = environment;
+        scene.environmentIntensity = 0.55;
+        pmrem.dispose();
+
+        const nextComposer = new EffectComposer(renderer);
+        nextComposer.addPass(new RenderPass(scene, camera));
+        const nextBloom = new UnrealBloomPass(size, 0.3, 0.52, 0.72);
+        nextComposer.addPass(nextBloom);
+        nextComposer.addPass(new OutputPass());
+        composer = nextComposer;
+        bloom = nextBloom;
+      })
+      .catch((error) => {
+        console.warn("[Boost Pitch] Post-processing unavailable; using direct renderer fallback.", error);
+      });
+  }
+
+  enablePostProcessing();
 
   const camPos = new THREE.Vector3();
   const look = new THREE.Vector3();
@@ -249,8 +293,8 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 1280;
     const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 720;
     renderer.setSize(w, h, false);
-    composer.setSize(w, h);
-    bloom.setSize(w, h);
+    composer?.setSize(w, h);
+    bloom?.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -459,7 +503,8 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
       prevPhase = world.phase;
     }
     syncVisuals(dt, now, gathered);
-    composer.render();
+    if (composer) composer.render();
+    else renderer.render(scene, camera);
     emit(false, now);
     raf = requestAnimationFrame(frame);
   }
@@ -622,12 +667,13 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     start,
     stop,
     dispose() {
+      disposed = true;
       stop();
       detachInput();
       ro.disconnect();
       fx.dispose();
-      composer.dispose();
-      env.dispose();
+      composer?.dispose();
+      environment?.dispose();
       renderer.dispose();
       if (window.__controlsTest === probe) delete window.__controlsTest;
     },
