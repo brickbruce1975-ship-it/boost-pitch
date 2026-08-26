@@ -59,6 +59,98 @@ const BALL_BOUNCE = 0.64;
 const BALL_DRAG = 0.18;
 const BALL_ROLL = 1.4;
 
+export const AI_DIFFICULTIES = ["rookie", "challenger", "veteran", "orbit_elite"] as const;
+export type AiDifficulty = (typeof AI_DIFFICULTIES)[number];
+export type BotMode = "kickoff" | "attack" | "defend" | "recover" | "aerial";
+
+export type BotTuning = Readonly<{
+  label: string;
+  reactionDelay: number;
+  thinkInterval: number;
+  predictionHorizon: number;
+  aimNoiseRad: number;
+  steerGain: number;
+  alignedRad: number;
+  chaseThrottle: number;
+  attackOffset: number;
+  defendZone: number;
+  homeBuffer: number;
+  recoveryConfirm: number;
+  recoveryExitRad: number;
+  boostReserve: number;
+  minBoostToChase: number;
+  maxBoostBurst: number;
+  recoveryBoostBurst: number;
+  aerialEnabled: boolean;
+  jumpMinHeight: number;
+  jumpMaxDistance: number;
+  aerialAbortTime: number;
+}>;
+
+export type BotDecision = Readonly<{
+  readyAt: number;
+  madeAt: number;
+  mode: BotMode;
+  target: { x: number; y: number; z: number };
+  actions: Actions;
+}>;
+
+export type BotBrain = {
+  difficulty: AiDifficulty;
+  mode: BotMode;
+  active: Actions;
+  decisionQueue: BotDecision[];
+  target: { x: number; y: number; z: number };
+  nextThinkAt: number;
+  modeSince: number;
+  recoverSince: number | null;
+  boostUntil: number;
+  aerialUntil: number;
+  rngState: number;
+};
+
+export type AiMatchOptions = Readonly<{
+  difficulty?: AiDifficulty;
+  aiSeed?: number;
+}>;
+
+export const BOT_TUNING: Record<AiDifficulty, BotTuning> = {
+  rookie: {
+    label: "Rookie", reactionDelay: 0.42, thinkInterval: 0.18, predictionHorizon: 0.18,
+    aimNoiseRad: 0.1222, steerGain: 1.35, alignedRad: 0.32, chaseThrottle: 0.6,
+    attackOffset: 1.3, defendZone: 34, homeBuffer: 7, recoveryConfirm: 0.42,
+    recoveryExitRad: 0.42, boostReserve: 42, minBoostToChase: 55, maxBoostBurst: 0.24,
+    recoveryBoostBurst: 0, aerialEnabled: false, jumpMinHeight: Infinity, jumpMaxDistance: 0,
+    aerialAbortTime: 0,
+  },
+  challenger: {
+    label: "Challenger", reactionDelay: 0.26, thinkInterval: 0.12, predictionHorizon: 0.3,
+    aimNoiseRad: 0.0698, steerGain: 1.75, alignedRad: 0.4, chaseThrottle: 0.76,
+    attackOffset: 2.2, defendZone: 31, homeBuffer: 5.5, recoveryConfirm: 0.28,
+    recoveryExitRad: 0.34, boostReserve: 30, minBoostToChase: 40, maxBoostBurst: 0.42,
+    recoveryBoostBurst: 0.18, aerialEnabled: true, jumpMinHeight: 2.9, jumpMaxDistance: 5.5,
+    aerialAbortTime: 0.65,
+  },
+  veteran: {
+    label: "Veteran", reactionDelay: 0.14, thinkInterval: 0.08, predictionHorizon: 0.44,
+    aimNoiseRad: 0.0349, steerGain: 2.2, alignedRad: 0.46, chaseThrottle: 0.9,
+    attackOffset: 3, defendZone: 29, homeBuffer: 4.2, recoveryConfirm: 0.16,
+    recoveryExitRad: 0.27, boostReserve: 20, minBoostToChase: 28, maxBoostBurst: 0.65,
+    recoveryBoostBurst: 0.38, aerialEnabled: true, jumpMinHeight: 2.6, jumpMaxDistance: 7,
+    aerialAbortTime: 0.85,
+  },
+  orbit_elite: {
+    label: "Orbit Elite", reactionDelay: 0.07, thinkInterval: 0.05, predictionHorizon: 0.58,
+    aimNoiseRad: 0.0131, steerGain: 2.45, alignedRad: 0.52, chaseThrottle: 1,
+    attackOffset: 3.6, defendZone: 27, homeBuffer: 3.2, recoveryConfirm: 0.08,
+    recoveryExitRad: 0.2, boostReserve: 12, minBoostToChase: 18, maxBoostBurst: 0.9,
+    recoveryBoostBurst: 0.55, aerialEnabled: true, jumpMinHeight: 2.35, jumpMaxDistance: 8,
+    aerialAbortTime: 1.1,
+  },
+};
+
+const IDLE_ACTIONS: Actions = { throttle: 0, steer: 0, pitch: 0, boost: false, jump: false };
+
 export type World = {
   cars: Car[];
   ball: Ball;
@@ -74,6 +166,11 @@ export type World = {
   roster: RosterEntry[];
   lastNudgeBits: string;
   fx: FxPulse[];
+  simTime: number;
+  aiDifficulty: AiDifficulty;
+  aiSeed: number;
+  kickoffSeed: number;
+  botBrains: Record<string, BotBrain>;
 };
 
 function v(x = 0, y = 0, z = 0) {
@@ -156,9 +253,42 @@ export function carsFromRoster(roster: RosterEntry[]): Car[] {
   );
 }
 
-export function createWorld(): World {
-  const roster = defaultSoloRoster();
+function hashPeerId(peerId: string) {
+  let h = 5381;
+  for (let i = 0; i < peerId.length; i++) h = ((h * 33) ^ peerId.charCodeAt(i)) >>> 0;
+  return h >>> 0;
+}
+
+function makeBotBrain(difficulty: AiDifficulty, peerId: string, seed: number): BotBrain {
   return {
+    difficulty,
+    mode: "kickoff",
+    active: { ...IDLE_ACTIONS },
+    decisionQueue: [],
+    target: v(),
+    nextThinkAt: 0,
+    modeSince: 0,
+    recoverSince: null,
+    boostUntil: 0,
+    aerialUntil: 0,
+    rngState: (seed ^ hashPeerId(peerId)) >>> 0,
+  };
+}
+
+function resetBotBrains(w: World) {
+  w.botBrains = {};
+  for (const car of w.cars) {
+    if (!car.isPlayer && !car.remote) {
+      w.botBrains[car.peerId] = makeBotBrain(w.aiDifficulty, car.peerId, w.aiSeed ^ w.kickoffSeed);
+    }
+  }
+}
+
+export function createWorld(options: AiMatchOptions = {}): World {
+  const roster = defaultSoloRoster();
+  const aiDifficulty = options.difficulty ?? "challenger";
+  const aiSeed = options.aiSeed ?? 0x0b0057;
+  const world: World = {
     cars: carsFromRoster(roster),
     ball: { pos: v(0, BALL_R + 0.05, 0), vel: v() },
     pads: makePads(),
@@ -173,15 +303,24 @@ export function createWorld(): World {
     roster,
     lastNudgeBits: "00",
     fx: [],
+    simTime: 0,
+    aiDifficulty,
+    aiSeed: aiSeed >>> 0,
+    kickoffSeed: aiSeed >>> 0,
+    botBrains: {},
   };
+  resetBotBrains(world);
+  return world;
 }
 
 export function resetKickoff(w: World, roster = w.roster) {
   w.roster = roster;
   w.cars = carsFromRoster(roster);
-  const nudge = sampleKickoffImpulse((Date.now() ^ (w.score[0] * 17 + w.score[1] * 31)) >>> 0);
+  w.kickoffSeed = (w.kickoffSeed * 1664525 + 1013904223) >>> 0;
+  const nudge = sampleKickoffImpulse(w.kickoffSeed);
   w.lastNudgeBits = nudge.bits;
   w.ball = { pos: v(0, BALL_R + 0.05, 0), vel: v(nudge.vx, 0, nudge.vz) };
+  resetBotBrains(w);
 }
 
 function carForward(car: Car) {
@@ -584,35 +723,140 @@ function collideCars(a: Car, b: Car) {
   }
 }
 
-function botActions(w: World, car: Car): Actions {
-  const ball = w.ball;
+function nextUnit(brain: BotBrain) {
+  brain.rngState = (brain.rngState * 1664525 + 1013904223) >>> 0;
+  return brain.rngState / 0x1_0000_0000;
+}
+
+function signedNoise(brain: BotBrain, amplitude: number) {
+  return (nextUnit(brain) * 2 - 1) * amplitude;
+}
+
+function angleDiff(want: number, have: number) {
+  let d = want - have;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function predictBall(ball: Ball, horizon: number) {
+  return {
+    x: ball.pos.x + ball.vel.x * horizon,
+    y: Math.max(BALL_R, ball.pos.y + ball.vel.y * horizon - 0.5 * BALL_G * horizon * horizon),
+    z: ball.pos.z + ball.vel.z * horizon,
+  };
+}
+
+function recoveryComplete(car: Car, target: { x: number; y: number; z: number }, ownGoalZ: number, t: BotTuning) {
+  const goalSideCorrect = Math.sign(ownGoalZ) * (car.pos.z - target.z) <= 0;
+  const wantYaw = Math.atan2(-(target.x - car.pos.x), -(target.z - car.pos.z));
+  return goalSideCorrect && Math.abs(angleDiff(wantYaw, car.yaw)) <= t.recoveryExitRad;
+}
+
+function chooseBotMode(w: World, car: Car, brain: BotBrain, t: BotTuning, ball: { x: number; y: number; z: number }): BotMode {
+  const ownGoalZ = car.team === 0 ? FIELD.halfL : -FIELD.halfL;
+  const goalSign = Math.sign(ownGoalZ);
+  const ballToOwnGoal = Math.abs(ownGoalZ - ball.z);
+  const goalSideWrong = goalSign * (car.pos.z - ball.z) > 0.8;
+  const nearWall = Math.abs(car.pos.x) > FIELD.halfW - 2 || Math.abs(car.pos.z) > FIELD.halfL - 2;
+  const recovering = !car.onGround || (nearWall && goalSideWrong);
+
+  if (brain.mode === "recover" && !recoveryComplete(car, ball, ownGoalZ, t)) return "recover";
+  if (recovering) {
+    if (brain.recoverSince === null) brain.recoverSince = w.simTime;
+    if (w.simTime - brain.recoverSince >= t.recoveryConfirm) return "recover";
+  } else brain.recoverSince = null;
+
+  if (ballToOwnGoal < t.defendZone || (goalSideWrong && ballToOwnGoal < t.defendZone + t.homeBuffer)) return "defend";
+  const dist = Math.hypot(ball.x - car.pos.x, ball.z - car.pos.z);
+  if (t.aerialEnabled && car.onGround && ball.y >= t.jumpMinHeight && dist <= t.jumpMaxDistance) return "aerial";
+  if (w.phaseT < 1.2 && Math.abs(w.ball.pos.x) < 3 && Math.abs(w.ball.pos.z) < 3) return "kickoff";
+  return "attack";
+}
+
+function chooseBotTarget(
+  w: World,
+  car: Car,
+  t: BotTuning,
+  mode: BotMode,
+  ball: { x: number; y: number; z: number },
+) {
   const ownGoalZ = car.team === 0 ? FIELD.halfL : -FIELD.halfL;
   const oppGoalZ = -ownGoalZ;
-  const toBallX = ball.pos.x - car.pos.x;
-  const toBallZ = ball.pos.z - car.pos.z;
-  const dist = Math.hypot(toBallX, toBallZ);
-  const defending = Math.sign(ball.pos.z - ownGoalZ) === Math.sign(car.pos.z - ownGoalZ) && Math.abs(ball.pos.z - ownGoalZ) < 28;
-  let tx = ball.pos.x + ball.vel.x * 0.35;
-  let tz = ball.pos.z + ball.vel.z * 0.35;
-  if (defending && dist > 14) {
-    tx = ball.pos.x * 0.45;
-    tz = ownGoalZ * 0.72;
-  } else {
-    tz += Math.sign(oppGoalZ) * 2.4;
+  if (mode === "recover") return { x: ball.x * 0.25, y: CAR_H, z: ownGoalZ * 0.62 };
+  if (mode === "defend") return { x: ball.x * 0.55, y: CAR_H, z: ownGoalZ - Math.sign(ownGoalZ) * t.homeBuffer };
+  if (mode === "kickoff") return { x: ball.x, y: CAR_H, z: ball.z };
+  const towardGoal = Math.sign(oppGoalZ);
+  return { x: ball.x, y: mode === "aerial" ? ball.y : CAR_H, z: ball.z - towardGoal * t.attackOffset };
+}
+
+function actionsTowardTarget(
+  w: World,
+  car: Car,
+  brain: BotBrain,
+  t: BotTuning,
+  mode: BotMode,
+  target: { x: number; y: number; z: number },
+): Actions {
+  const wanted = Math.atan2(-(target.x - car.pos.x), -(target.z - car.pos.z)) + signedNoise(brain, t.aimNoiseRad);
+  const err = angleDiff(wanted, car.yaw);
+  const aligned = Math.abs(err) <= t.alignedRad;
+  const now = w.simTime;
+  const canBudgetBurst = car.boost - BOOST_DRAIN * t.maxBoostBurst >= t.boostReserve;
+
+  if (mode === "recover" && now >= brain.boostUntil && car.boost > t.boostReserve && t.recoveryBoostBurst > 0) {
+    brain.boostUntil = now + t.recoveryBoostBurst;
+  } else if (mode !== "recover" && aligned && car.boost >= t.minBoostToChase && canBudgetBurst && now >= brain.boostUntil) {
+    brain.boostUntil = now + t.maxBoostBurst;
   }
-  const wantX = tx - car.pos.x;
-  const wantZ = tz - car.pos.z;
-  const wantYaw = Math.atan2(-wantX, -wantZ);
-  let err = wantYaw - car.yaw;
-  while (err > Math.PI) err -= Math.PI * 2;
-  while (err < -Math.PI) err += Math.PI * 2;
-  const steer = Math.max(-1, Math.min(1, err * 2.2));
-  const aligned = Math.abs(err) < 0.45;
-  const throttle = aligned ? 1 : 0.55;
-  const boost = aligned && dist > 10 && car.boost > 8;
-  const jump = ball.pos.y > 2.5 && dist < 8 && car.onGround;
-  const pitch = !car.onGround ? Math.max(-1, Math.min(1, (ball.pos.y - car.pos.y) * 0.25)) : 0;
-  return { throttle, steer, pitch, boost, jump };
+
+  const wantsAerial = mode === "aerial" && car.onGround && now >= brain.aerialUntil;
+  if (wantsAerial) brain.aerialUntil = now + t.aerialAbortTime;
+  return {
+    throttle: aligned ? 1 : t.chaseThrottle,
+    steer: Math.max(-1, Math.min(1, err * t.steerGain)),
+    pitch: mode === "aerial" && !car.onGround ? Math.max(-1, Math.min(1, (target.y - car.pos.y) * 0.25)) : 0,
+    boost: now < brain.boostUntil && car.boost > t.boostReserve,
+    jump: wantsAerial,
+  };
+}
+
+function thinkBot(w: World, car: Car, brain: BotBrain, t: BotTuning) {
+  const ball = predictBall(w.ball, t.predictionHorizon);
+  const mode = chooseBotMode(w, car, brain, t, ball);
+  const target = chooseBotTarget(w, car, t, mode, ball);
+  const actions = actionsTowardTarget(w, car, brain, t, mode, target);
+  return { mode, target, actions };
+}
+
+function botActions(w: World, car: Car): Actions {
+  const brain = w.botBrains[car.peerId];
+  if (!brain) return IDLE_ACTIONS;
+  const t = BOT_TUNING[brain.difficulty];
+  if (w.simTime >= brain.nextThinkAt) {
+    const plan = thinkBot(w, car, brain, t);
+    brain.mode = plan.mode;
+    brain.target = plan.target;
+    brain.modeSince = w.simTime;
+    brain.decisionQueue.push({
+      readyAt: w.simTime + t.reactionDelay,
+      madeAt: w.simTime,
+      mode: plan.mode,
+      target: plan.target,
+      actions: plan.actions,
+    });
+    brain.nextThinkAt = w.simTime + t.thinkInterval;
+    const maxQueue = Math.ceil(t.reactionDelay / t.thinkInterval) + 2;
+    if (brain.decisionQueue.length > maxQueue) brain.decisionQueue.splice(0, brain.decisionQueue.length - maxQueue);
+  }
+  while (brain.decisionQueue.length > 0 && brain.decisionQueue[0].readyAt <= w.simTime) {
+    brain.active = brain.decisionQueue.shift()!.actions;
+  }
+  const active = brain.active;
+  return {
+    ...active,
+    boost: active.boost && w.simTime < brain.boostUntil && car.boost > t.boostReserve,
+  };
 }
 
 function collectPads(w: World, dt: number) {
@@ -642,6 +886,7 @@ function checkGoal(w: World): 0 | 1 | null {
 
 export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOnly?: boolean; lsdCap?: number }) {
   if (w.phase === "menu" || w.phase === "over") return;
+  w.simTime += dt;
   w.fx.length = 0;
   const lsdCap = opts?.lsdCap ?? 1;
   if (opts?.carsOnly) {
@@ -752,7 +997,11 @@ export function snapshot(w: World): Snapshot {
   };
 }
 
-export function startMatch(w: World, roster?: RosterEntry[]) {
+export function startMatch(w: World, roster?: RosterEntry[], options: AiMatchOptions = {}) {
+  if (options.difficulty) w.aiDifficulty = options.difficulty;
+  if (options.aiSeed !== undefined) w.aiSeed = options.aiSeed >>> 0;
+  w.kickoffSeed = w.aiSeed;
+  w.simTime = 0;
   w.score = [0, 0];
   w.clock = MATCH_SECONDS;
   w.overtime = false;
@@ -772,6 +1021,8 @@ export function startPractice(w: World, mode: Exclude<PracticeMode, "match">, ro
   w.practice = mode;
   w.roster = nextRoster;
   w.cars = carsFromRoster(nextRoster);
+  w.simTime = 0;
+  resetBotBrains(w);
   w.phase = "play";
   w.phaseT = 0;
   w.countdown = 0;
