@@ -14,6 +14,7 @@ export type OrbitTrackId = (typeof ORBIT_TRACKS)[number]["id"];
 
 export const ORBIT_ALBUM = "The Orbit";
 export const ORBIT_ARTIST = "Brick Bruce";
+export const ORBIT_SPOTIFY_URL = "https://open.spotify.com/album/5BoIJ736xwpMsNJTaWpwVT";
 const MUSIC_VOL = 0.82;
 const FADE_SEC = 2.5;
 const MUTE_KEY = "boost-pitch-orbit-mute";

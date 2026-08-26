@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ORBIT_ALBUM,
   ORBIT_ARTIST,
+  ORBIT_SPOTIFY_URL,
   ORBIT_TRACKS,
   getMusicState,
   nextTrack,
@@ -100,8 +101,16 @@ export function OrbitRadio({ compact = false }: { compact?: boolean }) {
         </button>
       </div>
       {music.missing ? (
-        <p className="mt-2 text-[11px] text-muted">Masters missing — music stays silent.</p>
+        <p className="mt-2 text-[11px] text-muted">Local masters unavailable — open the official album to listen.</p>
       ) : null}
+      <a
+        href={ORBIT_SPOTIFY_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-3 inline-flex rounded-md border border-[#1ed760]/40 px-3 py-2 font-display text-xs tracking-widest text-[#1ed760] uppercase hover:bg-[#1ed760]/10"
+      >
+        Open Brick Bruce on Spotify
+      </a>
       {music.needsGesture && !music.playing ? (
         <p className="mt-2 text-[11px] text-muted">Tap Play album to unlock sound.</p>
       ) : null}

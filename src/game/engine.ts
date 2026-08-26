@@ -115,6 +115,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   let prevBoost = false;
   let prevJump = false;
   let lastJumbo = "";
+  let lastUiEmit = -Infinity;
   const reduced =
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -232,7 +233,9 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   const accentColor = new THREE.Color();
   const detachInput = attachInput();
 
-  function emit() {
+  function emit(force = true, now = performance.now() / 1000) {
+    if (!force && now - lastUiEmit < 1 / 30) return;
+    lastUiEmit = now;
     const s = snapshot(world);
     for (const fn of listeners) fn(s);
   }
@@ -452,7 +455,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     }
     syncVisuals(dt, now, gathered);
     composer.render();
-    emit();
+    emit(false, now);
     raf = requestAnimationFrame(frame);
   }
 

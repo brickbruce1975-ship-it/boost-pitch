@@ -20,7 +20,8 @@
     "unity:contract:validate": "node scripts/validate-unity-contract.mjs",
     "network:rehearsal": "node scripts/two-browser-rehearsal.mjs",
     "practice:smoke": "node scripts/practice-smoke.mjs",
-    "sync:deterministic": "node scripts/deterministic-sync-check.mjs"
+    "sync:deterministic": "node scripts/deterministic-sync-check.mjs",
+    "perf:benchmark": "node scripts/performance-benchmark.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
