@@ -52,6 +52,7 @@ export type BoostPad = {
 };
 
 export type Phase = "menu" | "countdown" | "play" | "goal" | "over";
+export type PracticeMode = "match" | "aerial" | "goals";
 
 export type RosterEntry = {
   peerId: string;
@@ -69,6 +70,7 @@ export type Snapshot = {
   boost: number;
   speed: number;
   phase: Phase;
+  practice: PracticeMode;
   lastGoal: 0 | 1 | null;
   countdown: number;
   onGround: boolean;

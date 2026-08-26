@@ -17,6 +17,7 @@ import {
   hostWireFrom,
   snapshot,
   startMatch,
+  startPractice,
   stepWorld,
   type CarWire,
   type HostWire,
@@ -42,6 +43,7 @@ export type Engine = {
   stop: () => void;
   dispose: () => void;
   play: (roster?: RosterEntry[]) => RosterEntry[];
+  practice: (mode: "aerial" | "goals") => void;
   setIdentity: (peerId: string, name: string, livery: Livery) => void;
   getSnapshot: () => Snapshot;
   subscribe: (fn: (s: Snapshot) => void) => () => void;
@@ -521,6 +523,20 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     return world.roster;
   }
 
+  function practice(mode: "aerial" | "goals") {
+    unlockAudio();
+    const net = netRef?.current;
+    const roster = defaultSoloRoster(net?.localName ?? "Brick Bruce", net?.localLivery ?? "brick");
+    startPractice(world, mode, roster);
+    const p = localCar();
+    if (p) {
+      const ff = { x: -Math.sin(p.yaw), z: -Math.cos(p.yaw) };
+      camera.position.set(p.pos.x - ff.x * 8.1, p.pos.y + 3.35, p.pos.z - ff.z * 8.1);
+      camera.lookAt(p.pos.x + ff.x * 2.6, p.pos.y + 0.85, p.pos.z + ff.z * 2.6);
+    }
+    emit();
+  }
+
   const probe = {
     getYaw: () => world.cars[0].yaw,
     getSpeed: () => Math.hypot(world.cars[0].vel.x, world.cars[0].vel.z),
@@ -608,6 +624,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
       if (window.__controlsTest === probe) delete window.__controlsTest;
     },
     play,
+    practice,
     setIdentity,
     getSnapshot: () => snapshot(world),
     subscribe(fn) {

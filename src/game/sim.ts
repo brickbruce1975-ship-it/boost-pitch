@@ -11,6 +11,7 @@ import {
   type Car,
   type Livery,
   type Phase,
+  type PracticeMode,
   type RosterEntry,
   type Snapshot,
   BRICK_BRUCE,
@@ -66,6 +67,7 @@ export type World = {
   clock: number;
   overtime: boolean;
   phase: Phase;
+  practice: PracticeMode;
   lastGoal: 0 | 1 | null;
   countdown: number;
   phaseT: number;
@@ -164,6 +166,7 @@ export function createWorld(): World {
     clock: MATCH_SECONDS,
     overtime: false,
     phase: "menu",
+    practice: "match",
     lastGoal: null,
     countdown: 3,
     phaseT: 0,
@@ -729,6 +732,7 @@ export function snapshot(w: World): Snapshot {
     boost: p?.boost ?? 0,
     speed: p ? Math.hypot(p.vel.x, p.vel.y, p.vel.z) : 0,
     phase: w.phase,
+    practice: w.practice,
     lastGoal: w.lastGoal,
     countdown: w.countdown,
     onGround: p?.onGround ?? true,
@@ -753,9 +757,52 @@ export function startMatch(w: World, roster?: RosterEntry[]) {
   w.clock = MATCH_SECONDS;
   w.overtime = false;
   w.lastGoal = null;
+  w.practice = "match";
   resetKickoff(w, roster ?? w.roster);
   w.phase = "countdown";
   w.phaseT = 0;
+}
+
+export function startPractice(w: World, mode: Exclude<PracticeMode, "match">, roster?: RosterEntry[]) {
+  const nextRoster = roster ?? defaultSoloRoster();
+  w.score = [0, 0];
+  w.clock = MATCH_SECONDS;
+  w.overtime = false;
+  w.lastGoal = null;
+  w.practice = mode;
+  w.roster = nextRoster;
+  w.cars = carsFromRoster(nextRoster);
+  w.phase = "play";
+  w.phaseT = 0;
+  w.countdown = 0;
+  w.lastNudgeBits = "PRACTICE";
+  const player = w.cars.find((c) => c.isPlayer) ?? w.cars[0];
+  if (mode === "aerial") {
+    player.pos = { x: 0, y: 4.4, z: 21 };
+    player.vel = { x: 0, y: 2.8, z: -7.5 };
+    player.yaw = 0;
+    player.onGround = false;
+    player.jumpsLeft = 1;
+    player.boost = 100;
+    w.ball.pos = { x: 0, y: 7.2, z: 4 };
+    w.ball.vel = { x: 0, y: 0, z: -3.2 };
+  } else {
+    player.pos = { x: 0, y: CAR_H, z: 25 };
+    player.vel = { x: 0, y: 0, z: 0 };
+    player.yaw = 0;
+    player.onGround = true;
+    player.jumpsLeft = 2;
+    player.boost = 100;
+    w.ball.pos = { x: 0, y: BALL_R + 0.05, z: 5 };
+    w.ball.vel = { x: 0, y: 0, z: -2 };
+  }
+  for (const car of w.cars) {
+    if (car !== player) {
+      car.pos = { x: car.team === 0 ? -18 : 0, y: CAR_H, z: car.team === 0 ? 30 : -34 };
+      car.vel = v();
+      car.onGround = true;
+    }
+  }
 }
 
 export type CarWire = {

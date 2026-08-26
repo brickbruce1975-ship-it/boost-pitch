@@ -69,6 +69,7 @@ export function GameView() {
     boost: 33,
     speed: 0,
     phase: "menu",
+    practice: "match",
     lastGoal: null,
     countdown: 3,
     onGround: true,
@@ -182,6 +183,17 @@ export function GameView() {
             </li>
           ))}
         </ul>
+      )}
+
+      {snap.phase === "play" && snap.practice !== "match" && (
+        <div className="pointer-events-none absolute top-24 left-1/2 -translate-x-1/2 rounded-full border border-cyan/30 bg-ink/65 px-4 py-2 text-center backdrop-blur-sm">
+          <p className="font-display text-xs font-bold tracking-[0.28em] text-cyan uppercase">
+            {snap.practice === "aerial" ? "Aerial Lab" : "Goal Lab"}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted">
+            {snap.practice === "aerial" ? "Use Space + Shift to meet the floating target" : "Drive through the ball and finish in the amber net"}
+          </p>
+        </div>
       )}
 
       {snap.phase === "play" && (
@@ -357,6 +369,24 @@ export function GameView() {
                   Join
                 </button>
               </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => engineRef.current?.practice("aerial")}
+                className="rounded-md border border-cyan/35 bg-cyan/10 px-3 py-2 text-left font-display text-xs font-bold tracking-widest text-cyan uppercase hover:bg-cyan/20"
+              >
+                Aerial lab
+                <span className="mt-1 block font-sans text-[10px] font-normal normal-case tracking-normal text-muted">Floating target + full boost</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => engineRef.current?.practice("goals")}
+                className="rounded-md border border-amber/35 bg-amber/10 px-3 py-2 text-left font-display text-xs font-bold tracking-widest text-amber uppercase hover:bg-amber/20"
+              >
+                Goal lab
+                <span className="mt-1 block font-sans text-[10px] font-normal normal-case tracking-normal text-muted">Fast reset + target net</span>
+              </button>
             </div>
             <p className="mt-4 text-[11px] leading-relaxed text-muted">
               Casual lobby only — friends you invite. Peers learn each other's IPs. Not for ranked play.
