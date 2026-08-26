@@ -6,7 +6,7 @@ const peerCount = Number(process.argv[3] || 8);
 const outDir = process.argv[4] || "/workspace/boost-pitch-performance";
 const durationMs = Number(process.argv[5] || 12000);
 mkdirSync(outDir, { recursive: true });
-const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-background-timer-throttling", "--disable-renderer-backgrounding"] });
+const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--enable-gpu", "--disable-background-timer-throttling", "--disable-renderer-backgrounding"] });
 const pages = [];
 const errors = [];
 try {

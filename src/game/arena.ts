@@ -400,7 +400,10 @@ export function makeArena(scene: THREE.Scene) {
   }
   paintJumbo(0, 0, "3:00", "BOOST PITCH  ·  THE ORBIT");
 
+  let lastCrowdTick = -Infinity;
   function tick(time: number) {
+    if (time - lastCrowdTick < 1 / 30) return;
+    lastCrowdTick = time;
     for (let i = 0; i < crowd.length; i++) setCrowdInstance(i, time);
     crowdBody.instanceMatrix.needsUpdate = true;
     crowdHead.instanceMatrix.needsUpdate = true;

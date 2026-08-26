@@ -119,8 +119,9 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   const reduced =
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  const constrained = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !constrained, alpha: false, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, constrained ? 1.15 : 1.5));
   renderer.setSize(canvas.clientWidth || 1280, canvas.clientHeight || 720, false);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -223,7 +224,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   renderer.getSize(size);
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(size, reduced ? 0.18 : 0.38, 0.52, 0.72);
+  const bloom = new UnrealBloomPass(size, reduced || constrained ? 0.12 : 0.3, 0.52, 0.72);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
