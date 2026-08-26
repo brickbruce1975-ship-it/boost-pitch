@@ -120,6 +120,13 @@ try {
       const match = setupPlay(tier, seed + 5);
       const matchTrace = step(match, 30);
       const matchFinite = matchTrace.every((line) => !line.includes("null") && !line.includes("NaN"));
+
+      const overtime = setupPlay(tier, seed + 6);
+      overtime.overtime = true;
+      overtime.phaseT = sim.OVERTIME_MAX_SECONDS - DT * 0.5;
+      sim.stepWorld(overtime, idle, DT);
+      const overtimeCapPass = overtime.phase === "over" && overtime.score[0] === overtime.score[1];
+
       tierReports.push({
         tier,
         deterministic,
@@ -138,6 +145,7 @@ try {
         aerialEnabled: t.aerialEnabled,
         sawJump,
         aerialPass,
+        overtimeCapPass,
         matchFinite,
         matchScore: [...match.score],
         matchClock: Number(match.clock.toFixed(3)),
@@ -151,19 +159,20 @@ try {
     return {
       generatedAt: new Date().toISOString(),
       engine: "authoritative sim.ts fixed-step scenario runner",
-      scenariosPerTier: ["determinism", "reaction_delay", "boost_budget", "wall_recovery", "aerial_eligibility", "30s_match_health"],
+      scenariosPerTier: ["determinism", "reaction_delay", "boost_budget", "wall_recovery", "aerial_eligibility", "sudden_death_cap", "30s_match_health"],
       tiers: tierReports,
       monotonic,
-      pass: tierReports.every((r) => r.deterministic && r.reactionPass && r.queuePass && r.budgetPass && r.recoveryPass && r.aerialPass && r.matchFinite) && monotonic.reaction && monotonic.recovery,
+      pass: tierReports.every((r) => r.deterministic && r.reactionPass && r.queuePass && r.budgetPass && r.recoveryPass && r.aerialPass && r.overtimeCapPass && r.matchFinite) && monotonic.reaction && monotonic.recovery,
     };
   });
   await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
   for (const tier of report.tiers) {
-    console.log(`${tier.deterministic && tier.reactionPass && tier.queuePass && tier.budgetPass && tier.recoveryPass && tier.aerialPass && tier.matchFinite ? "PASS" : "FAIL"} ai ${tier.tier}`, {
+    console.log(`${tier.deterministic && tier.reactionPass && tier.queuePass && tier.budgetPass && tier.recoveryPass && tier.aerialPass && tier.overtimeCapPass && tier.matchFinite ? "PASS" : "FAIL"} ai ${tier.tier}`, {
       firstAction: tier.firstAction,
       queue: `${tier.maxQueue}/${tier.queueCap}`,
       recovery: tier.recoverAt,
       jump: tier.sawJump,
+      overtimeCap: tier.overtimeCapPass,
       score: tier.matchScore,
     });
   }

@@ -58,6 +58,8 @@ const W_MAX = 220;
 const BALL_BOUNCE = 0.64;
 const BALL_DRAG = 0.18;
 const BALL_ROLL = 1.4;
+/** Bounded sudden death: first goal wins; a tied cap ends the match as a draw. */
+export const OVERTIME_MAX_SECONDS = 60;
 
 export const AI_DIFFICULTIES = ["rookie", "challenger", "veteran", "orbit_elite"] as const;
 export type AiDifficulty = (typeof AI_DIFFICULTIES)[number];
@@ -919,6 +921,10 @@ export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOn
   }
 
   if (w.phase === "play") {
+    if (w.overtime && w.phaseT >= OVERTIME_MAX_SECONDS) {
+      w.phase = "over";
+      return;
+    }
     if (!w.overtime) {
       w.clock = Math.max(0, w.clock - dt);
       if (w.clock <= 0) {
