@@ -1,0 +1,80 @@
+name: Weekly bundle and Lighthouse regression
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Build and audit production output
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build production output
+        run: npm run build
+
+      - name: Check compressed client bundle budgets
+        run: node scripts/check-bundle-budget.mjs
+
+      - name: Start Nitro production preview
+        run: |
+          mkdir -p artifacts
+          npx nitro preview --port 4173 > artifacts/nitro-preview.log 2>&1 &
+          echo $! > artifacts/nitro-preview.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat artifacts/nitro-preview.log
+          exit 1
+
+      - name: Run Lighthouse performance audit
+        run: |
+          npx --yes lighthouse@12.8.2 http://127.0.0.1:4173/ \
+            --only-categories=performance \
+            --output=json \
+            --output=html \
+            --output-path=artifacts/lighthouse \
+            --chrome-flags="--headless=new --no-sandbox"
+
+      - name: Check Lighthouse regression budgets
+        run: node scripts/check-lighthouse-budget.mjs artifacts/lighthouse.report.json
+
+      - name: Stop Nitro production preview
+        if: always()
+        run: |
+          if [ -f artifacts/nitro-preview.pid ]; then
+            kill "$(cat artifacts/nitro-preview.pid)" || true
+          fi
+
+      - name: Upload performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-performance-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 28

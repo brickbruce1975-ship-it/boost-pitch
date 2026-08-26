@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "maxInitialRouteGzipKiB": 175,
+    "maxTotalClientGzipKiB": 330
+  },
+  "lighthouse": {
+    "minPerformanceScore": 0.3,
+    "maxFirstContentfulPaintMs": 5000,
+    "maxLargestContentfulPaintMs": 5000,
+    "maxCumulativeLayoutShift": 0.35,
+    "maxTotalByteWeightKiB": 1300
+  }
+}
