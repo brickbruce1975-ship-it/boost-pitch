@@ -121,9 +121,13 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
 
   const constrained = typeof navigator !== "undefined" && (navigator.hardwareConcurrency ?? 8) <= 4;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !constrained, alpha: false, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, constrained ? 1.15 : 1.5));
+  const gl = renderer.getContext();
+  const rendererName = String(gl.getParameter(gl.RENDERER) || "").toLowerCase();
+  const softwareRenderer = /swiftshader|llvmpipe|software rasterizer|mesa software/.test(rendererName);
+  const lowPower = constrained || softwareRenderer || (typeof navigator !== "undefined" && (navigator as Navigator & { deviceMemory?: number }).deviceMemory !== undefined && (navigator as Navigator & { deviceMemory?: number }).deviceMemory! <= 4);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1 : 1.5));
   renderer.setSize(canvas.clientWidth || 1280, canvas.clientHeight || 720, false);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = !lowPower;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -224,7 +228,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
   renderer.getSize(size);
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(size, reduced || constrained ? 0.12 : 0.3, 0.52, 0.72);
+  const bloom = new UnrealBloomPass(size, reduced || lowPower ? 0.08 : 0.3, 0.52, 0.72);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -374,7 +378,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
       mat.emissiveIntensity = 0.75 + Math.sin(now * 4 + i) * 0.35;
     });
 
-    flashMat.opacity = fx.getFlash() * (reduced ? 0.08 : 0.28);
+    flashMat.opacity = fx.getFlash() * (reduced || lowPower ? 0.08 : 0.28);
     flashMat.color.setHex(world.lastGoal === 1 ? 0xff8a3d : 0x2ee6d6);
 
     const key = `${world.score[0]}:${world.score[1]}:${fmtJumboClock(world)}:${world.phase}`;

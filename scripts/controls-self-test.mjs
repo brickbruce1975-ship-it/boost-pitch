@@ -4,8 +4,11 @@ const url = (process.argv[2] || "http://127.0.0.1:8080/") + (process.argv[2]?.in
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto(url, { waitUntil: "domcontentloaded" });
-await page.waitForFunction(() => typeof window.__controlsTest?.stepFor === "function" && typeof window.__controlsTest?.resetForQa === "function");
 await page.getByRole("button", { name: /kick off/i }).click();
+await page.waitForFunction(
+  () => typeof window.__controlsTest?.stepFor === "function" && typeof window.__controlsTest?.resetForQa === "function",
+  { timeout: 30000 },
+);
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
