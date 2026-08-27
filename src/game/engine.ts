@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DT, FIELD, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "./types";
+import { BALL_R, CAR_H, DT, FIELD, MAX_CARS, type Livery, type RosterEntry, type Snapshot } from "./types";
 import { attachInput, injectKeys, readActions, setSteerOverride } from "./input";
 import type { Actions } from "./types";
 import {
@@ -13,6 +13,7 @@ import {
   snapshot,
   startMatch,
   startPractice,
+  returnToMenu,
   stepWorld,
   type CarWire,
   type HostWire,
@@ -69,6 +70,7 @@ export type Engine = {
   dispose: () => void;
   play: (roster?: RosterEntry[]) => RosterEntry[];
   practice: (mode: "aerial" | "goals") => void;
+  returnToMenu: () => void;
   setIdentity: (peerId: string, name: string, livery: Livery) => void;
   getSnapshot: () => Snapshot;
   subscribe: (fn: (s: Snapshot) => void) => () => void;
@@ -590,6 +592,11 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     emit();
   }
 
+  function returnToMenuState() {
+    returnToMenu(world);
+    emit();
+  }
+
   const probe = {
     getYaw: () => world.cars[0].yaw,
     getSpeed: () => Math.hypot(world.cars[0].vel.x, world.cars[0].vel.z),
@@ -622,7 +629,49 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
         world.cars[1].vel = { x: 0, y: 0, z: 0 };
       }
       world.phase = "play";
+      world.practice = "match";
+      world.practiceState = null;
     },
+    setupGoalLabForQa: () => {
+      acc = 0;
+      last = 0;
+      startPractice(world, "goals", defaultSoloRoster(netRef?.current?.localName ?? "Brick Bruce", netRef?.current?.localLivery ?? "brick"));
+      return snapshot(world);
+    },
+    scoreGoalLabForQa: () => {
+      const state = world.practiceState;
+      if (!state || state.kind !== "goals") return snapshot(world);
+      world.ball.pos = { x: state.laneX, y: BALL_R + 0.05, z: -FIELD.halfL - 1 };
+      world.ball.vel = { x: 0, y: 0, z: -1 };
+      stepWorld(world, { throttle: 0, steer: 0, pitch: 0, boost: false, jump: false }, DT);
+      return snapshot(world);
+    },
+    setupFenceForQa: () => {
+      acc = 0;
+      last = 0;
+      const car = world.cars[0];
+      car.pos = { x: FIELD.halfW - FIELD.fenceClimbRun - 0.1, y: CAR_H, z: 0 };
+      car.vel = { x: 0, y: 0, z: 0 };
+      car.yaw = -Math.PI / 2;
+      car.pitch = 0;
+      car.onGround = true;
+      car.jumpsLeft = 2;
+      car.boost = 100;
+      car.wL = 0;
+      car.wR = 0;
+      car.fyFilt = 0;
+      world.ball.pos = { x: -20, y: BALL_R, z: -20 };
+      world.ball.vel = { x: 0, y: 0, z: 0 };
+      world.phase = "play";
+      world.practice = "match";
+      world.practiceState = null;
+      return snapshot(world);
+    },
+    getQaState: () => ({
+      ...snapshot(world),
+      pos: { ...world.cars[0].pos },
+      vel: { ...world.cars[0].vel },
+    }),
     stepFor: (seconds: number, extra?: Partial<Actions> & { lsdCap?: number }) => {
       qaHold = true;
       acc = 0;
@@ -679,6 +728,7 @@ export function createEngine(canvas: HTMLCanvasElement, netRef?: { current: NetB
     },
     play,
     practice,
+    returnToMenu: returnToMenuState,
     setIdentity,
     getSnapshot: () => snapshot(world),
     subscribe(fn) {
@@ -724,6 +774,10 @@ declare global {
       getLock?: () => number;
       getKappa?: () => number;
       getWheelDelta?: () => number;
+      setupGoalLabForQa?: () => Snapshot;
+      scoreGoalLabForQa?: () => Snapshot;
+      setupFenceForQa?: () => Snapshot;
+      getQaState?: () => Snapshot & { pos: { x: number; y: number; z: number }; vel: { x: number; y: number; z: number } };
     };
   }
 }

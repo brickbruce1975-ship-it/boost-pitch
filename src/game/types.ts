@@ -71,7 +71,12 @@ export type Snapshot = {
   speed: number;
   phase: Phase;
   practice: PracticeMode;
+  practiceAttempt: number | null;
+  practiceResult: "active" | "success" | "miss" | "own_goal" | null;
+  practiceDeadline: number | null;
+  practiceRemaining: number | null;
   lastGoal: 0 | 1 | null;
+  epicSave: { name: string; team: 0 | 1 } | null;
   countdown: number;
   onGround: boolean;
   yaw: number;
@@ -100,6 +105,10 @@ export const FIELD = {
   goalHalfW: 9,
   goalH: 7.2,
   goalDepth: 5.5,
+  /** Tall visible perimeter mesh; cars climb only the lower, rideable approach face. */
+  fenceHeight: 26,
+  fenceClimbHeight: 6,
+  fenceClimbRun: 8,
 };
 
 export const BALL_R = 1.55;

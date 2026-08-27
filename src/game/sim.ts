@@ -24,6 +24,7 @@ const BALL_G = 30;
 const ACCEL = 40;
 const BRAKE = 52;
 const REVERSE = 18;
+const REVERSE_BLEND_SPEED = 2.2;
 const MAX_SPD = 31;
 const BOOST_ACCEL = 58;
 const BOOST_MAX = 43;
@@ -153,6 +154,25 @@ export const BOT_TUNING: Record<AiDifficulty, BotTuning> = {
 
 const IDLE_ACTIONS: Actions = { throttle: 0, steer: 0, pitch: 0, boost: false, jump: false };
 
+export type PracticeResult = "active" | "success" | "miss" | "own_goal";
+
+type GoalLabState = {
+  kind: "goals";
+  attempt: number;
+  startedAt: number;
+  deadline: number;
+  result: PracticeResult;
+  resultUntil: number;
+  targetGoal: 0 | 1;
+  laneX: number;
+};
+
+type PracticeScenarioState = GoalLabState;
+
+const GOAL_LAB_ATTEMPT_SECONDS = 12;
+const GOAL_LAB_RESULT_HOLD_SECONDS = 1.25;
+const GOAL_LAB_LANES = [-4, 0, 4] as const;
+
 export type World = {
   cars: Car[];
   ball: Ball;
@@ -162,7 +182,10 @@ export type World = {
   overtime: boolean;
   phase: Phase;
   practice: PracticeMode;
+  practiceState: PracticeScenarioState | null;
   lastGoal: 0 | 1 | null;
+  epicSave: { name: string; team: 0 | 1 } | null;
+  epicSaveUntil: number;
   countdown: number;
   phaseT: number;
   roster: RosterEntry[];
@@ -277,6 +300,10 @@ function makeBotBrain(difficulty: AiDifficulty, peerId: string, seed: number): B
   };
 }
 
+function localPracticeCar(w: World) {
+  return w.cars.find((car) => car.isPlayer) ?? w.cars[0];
+}
+
 function resetBotBrains(w: World) {
   w.botBrains = {};
   for (const car of w.cars) {
@@ -299,7 +326,10 @@ export function createWorld(options: AiMatchOptions = {}): World {
     overtime: false,
     phase: "menu",
     practice: "match",
+    practiceState: null,
     lastGoal: null,
+    epicSave: null,
+    epicSaveUntil: 0,
     countdown: 3,
     phaseT: 0,
     roster,
@@ -322,7 +352,83 @@ export function resetKickoff(w: World, roster = w.roster) {
   const nudge = sampleKickoffImpulse(w.kickoffSeed);
   w.lastNudgeBits = nudge.bits;
   w.ball = { pos: v(0, BALL_R + 0.05, 0), vel: v(nudge.vx, 0, nudge.vz) };
+  w.epicSave = null;
+  w.epicSaveUntil = 0;
   resetBotBrains(w);
+}
+
+function resetCarForGoalLab(car: Car, laneX: number) {
+  car.pos = { x: laneX * 0.35, y: CAR_H, z: 25 };
+  car.vel = v();
+  car.yaw = 0;
+  car.pitch = 0;
+  car.boost = 100;
+  car.onGround = true;
+  car.jumpsLeft = 2;
+  car.jumpHeld = false;
+  car.boosting = false;
+  car.flipTimer = 0;
+  car.slip = 0;
+  car.kappa = 0;
+  car.fyFilt = 0;
+  car.yawRate = 0;
+  car.wL = 0;
+  car.wR = 0;
+  car.lock = 0;
+}
+
+function resetGoalLabAttempt(w: World, attempt: number) {
+  const player = localPracticeCar(w);
+  if (!player) return;
+  const laneX = GOAL_LAB_LANES[attempt % GOAL_LAB_LANES.length];
+  resetCarForGoalLab(player, laneX);
+  w.ball.pos = { x: laneX, y: BALL_R + 0.05, z: 5 };
+  w.ball.vel = { x: 0, y: 0, z: -2 };
+  for (const car of w.cars) {
+    if (car === player) continue;
+    car.pos = { x: car.team === 0 ? -18 : 0, y: CAR_H, z: car.team === 0 ? 30 : -34 };
+    car.vel = v();
+    car.onGround = true;
+    car.boosting = false;
+  }
+  w.practiceState = {
+    kind: "goals",
+    attempt,
+    startedAt: w.simTime,
+    deadline: w.simTime + GOAL_LAB_ATTEMPT_SECONDS,
+    result: "active",
+    resultUntil: 0,
+    targetGoal: 1,
+    laneX,
+  };
+}
+
+function finishGoalLab(w: World, result: Exclude<PracticeResult, "active">) {
+  const state = w.practiceState;
+  if (!state || state.kind !== "goals" || state.result !== "active") return;
+  state.result = result;
+  state.resultUntil = w.simTime + GOAL_LAB_RESULT_HOLD_SECONDS;
+}
+
+function tickGoalLab(w: World) {
+  const state = w.practiceState;
+  if (w.practice !== "goals" || !state || state.kind !== "goals") return false;
+  if (state.result !== "active") {
+    if (w.simTime >= state.resultUntil) resetGoalLabAttempt(w, state.attempt + 1);
+    return true;
+  }
+  if (w.simTime >= state.deadline) {
+    finishGoalLab(w, "miss");
+    return true;
+  }
+  return false;
+}
+
+function resolveGoalLabGoal(w: World, scored: 0 | 1) {
+  const state = w.practiceState;
+  if (w.practice !== "goals" || !state || state.kind !== "goals") return false;
+  finishGoalLab(w, scored === state.targetGoal ? "success" : "own_goal");
+  return true;
 }
 
 function carForward(car: Car) {
@@ -379,6 +485,97 @@ function clampArena(p: { x: number; y: number; z: number }, r: number, isBall: b
   return null;
 }
 
+type FenceSurface = {
+  y: number;
+  active: boolean;
+  dhdx: number;
+  dhdz: number;
+  nx: number;
+  ny: number;
+  nz: number;
+};
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+/** Smooth union of side/end faces so a corner crossing has no normal seam. */
+function fenceSurface(x: number, z: number): FenceSurface {
+  const run = FIELD.fenceClimbRun;
+  const height = FIELD.fenceClimbHeight;
+  const gapX = FIELD.halfW - Math.abs(x);
+  const gapZ = FIELD.halfL - Math.abs(z);
+  const cx = clamp01((run - gapX) / run);
+  const cz = clamp01((run - gapZ) / run);
+  const active = cx > 0 || cz > 0;
+  if (!active) return { y: CAR_H, active: false, dhdx: 0, dhdz: 0, nx: 0, ny: 1, nz: 0 };
+
+  const sx = x < 0 ? -1 : 1;
+  const sz = z < 0 ? -1 : 1;
+  const dCxdX = cx > 0 && cx < 1 ? sx / run : 0;
+  const dCzdZ = cz > 0 && cz < 1 ? sz / run : 0;
+  const union = 1 - (1 - cx) * (1 - cz);
+  const dhdx = height * (1 - cz) * dCxdX;
+  const dhdz = height * (1 - cx) * dCzdZ;
+  const nLen = Math.hypot(dhdx, 1, dhdz);
+  return {
+    y: CAR_H + height * union,
+    active: true,
+    dhdx,
+    dhdz,
+    nx: -dhdx / nLen,
+    ny: 1 / nLen,
+    nz: -dhdz / nLen,
+  };
+}
+
+function restoreGroundState(car: Car, landed: boolean, fx: FxPulse[]) {
+  car.onGround = true;
+  car.jumpsLeft = 2;
+  car.pitch *= 0.3;
+  const hx = -Math.sin(car.yaw);
+  const hz = -Math.cos(car.yaw);
+  const along = car.vel.x * hx + car.vel.z * hz;
+  car.vel.x = hx * along + (car.vel.x - hx * along) * 0.35;
+  car.vel.z = hz * along + (car.vel.z - hz * along) * 0.35;
+  car.wL = along / R_WH;
+  car.wR = along / R_WH;
+  if (landed) fx.push({ kind: "land", mag: 0.4, x: car.pos.x, y: car.pos.y, z: car.pos.z });
+}
+
+/** Resolves ground contact against the field or the lower climbable fence face. */
+function resolveFenceGroundContact(car: Car, dt: number, fx: FxPulse[]) {
+  const surface = fenceSurface(car.pos.x, car.pos.z);
+  const signedDistanceY = car.pos.y - surface.y;
+  const normalSpeed = car.vel.x * surface.nx + car.vel.y * surface.ny + car.vel.z * surface.nz;
+  const contactSlop = 0.035;
+
+  if (signedDistanceY > contactSlop && normalSpeed >= -0.05) {
+    if (car.onGround) car.onGround = false;
+    return;
+  }
+  // A fresh jump/boost ascent always belongs to the existing air branch; do not
+  // re-snap it to a steeper nearby fence sample until it starts descending.
+  if (!car.onGround && car.vel.y > 0.05) return;
+
+  const landed = !car.onGround && car.vel.y < -4;
+  car.pos.y = surface.y;
+  if (normalSpeed < 0) {
+    car.vel.x -= surface.nx * normalSpeed;
+    car.vel.y -= surface.ny * normalSpeed;
+    car.vel.z -= surface.nz * normalSpeed;
+  }
+  if (surface.active) {
+    // Gravity is projected onto the climb face: uphill costs speed, downhill returns it.
+    car.vel.x += GRAVITY * surface.ny * surface.nx * dt;
+    car.vel.z += GRAVITY * surface.ny * surface.nz * dt;
+    car.vel.y = surface.dhdx * car.vel.x + surface.dhdz * car.vel.z;
+  } else {
+    car.vel.y = 0;
+  }
+  if (!car.onGround) restoreGroundState(car, landed, fx);
+}
+
 function heading(yaw: number) {
   return { nx: -Math.sin(yaw), nz: -Math.cos(yaw), rx: Math.cos(yaw), rz: -Math.sin(yaw) };
 }
@@ -397,7 +594,12 @@ function applyTires(car: Car, a: Actions, dt: number, pulses: FxPulse[], lsdCap 
   let driveAccel = 0;
   const along0 = car.vel.x * -Math.sin(car.yaw) + car.vel.z * -Math.cos(car.yaw);
   if (a.throttle > 0.05) driveAccel = ACCEL * a.throttle;
-  else if (a.throttle < -0.05) driveAccel = along0 > 0.6 ? -BRAKE : -REVERSE;
+  else if (a.throttle < -0.05) {
+    // Blend braking into reverse around zero longitudinal speed. A hard sign switch here
+    // repeatedly fights the two rear wheel states and shows up as a visible reverse jitter.
+    const brakeBlend = Math.max(0, Math.min(1, (along0 + REVERSE_BLEND_SPEED) / (REVERSE_BLEND_SPEED * 2)));
+    driveAccel = -REVERSE - (BRAKE - REVERSE) * brakeBlend;
+  }
 
   let boostAccel = 0;
   if (a.boost && car.boost > 0) {
@@ -411,7 +613,7 @@ function applyTires(car: Car, a: Actions, dt: number, pulses: FxPulse[], lsdCap 
   const shift = boostAccel > 0 || driveAccel > 6 ? 0.05 : driveAccel < -10 || coasting ? -0.14 : 0;
   const rotate = shift < -0.05 ? 1.22 : 1;
 
-  const reverse = along0 >= -0.4 ? 1 : -1;
+  const reverse = Math.abs(along0) < REVERSE_BLEND_SPEED ? 1 : along0 < 0 ? -1 : 1;
   const spd0 = Math.hypot(car.vel.x, car.vel.z);
   const speedFactor = Math.min(1, Math.max(0.18, spd0 / 10));
   const steerFade = 1 / (1 + 1.15 * car.slip);
@@ -590,24 +792,7 @@ function stepCar(car: Car, a: Actions, dt: number, fx: FxPulse[], lsdCap = 1) {
   car.pos.y += car.vel.y * dt;
   car.pos.z += car.vel.z * dt;
 
-  if (car.pos.y <= CAR_H) {
-    const landed = !car.onGround && car.vel.y < -4;
-    car.pos.y = CAR_H;
-    if (car.vel.y < 0) car.vel.y = 0;
-    if (!car.onGround) {
-      car.onGround = true;
-      car.jumpsLeft = 2;
-      car.pitch *= 0.3;
-      const hx = -Math.sin(car.yaw);
-      const hz = -Math.cos(car.yaw);
-      const along = car.vel.x * hx + car.vel.z * hz;
-      car.vel.x = hx * along + (car.vel.x - hx * along) * 0.35;
-      car.vel.z = hz * along + (car.vel.z - hz * along) * 0.35;
-      car.wL = along / R_WH;
-      car.wR = along / R_WH;
-      if (landed) fx.push({ kind: "land", mag: 0.4, x: car.pos.x, y: car.pos.y, z: car.pos.z });
-    }
-  }
+  resolveFenceGroundContact(car, dt, fx);
 
   const hit = clampArena(car.pos, CAR_R * 0.85, false);
   if (hit) {
@@ -615,6 +800,7 @@ function stepCar(car: Car, a: Actions, dt: number, fx: FxPulse[], lsdCap = 1) {
     bounce(car.vel, hit, 0.15);
     car.vel.x *= 0.7;
     car.vel.z *= 0.7;
+    resolveFenceGroundContact(car, dt, fx);
     if (spd > 7) {
       fx.push({
         kind: "wall",
@@ -670,7 +856,16 @@ function stepBall(ball: Ball, dt: number, fx: FxPulse[]) {
   }
 }
 
-function collideCarBall(car: Car, ball: Ball, fx: FxPulse[]) {
+function ballThreatensGoal(ball: Ball, team: 0 | 1) {
+  const goalSign = team === 0 ? 1 : -1;
+  return (
+    goalSign * ball.vel.z > 5 &&
+    goalSign * ball.pos.z > FIELD.halfL - 18 &&
+    Math.abs(ball.pos.x) < FIELD.goalHalfW + BALL_R
+  );
+}
+
+function collideCarBall(w: World, car: Car, ball: Ball, fx: FxPulse[]) {
   const dx = ball.pos.x - car.pos.x;
   const dy = ball.pos.y - (car.pos.y + 0.15);
   const dz = ball.pos.z - car.pos.z;
@@ -684,6 +879,7 @@ function collideCarBall(car: Car, ball: Ball, fx: FxPulse[]) {
   ball.pos.x += nx * push;
   ball.pos.y += ny * push;
   ball.pos.z += nz * push;
+  const wasGoalThreat = ballThreatensGoal(ball, car.team);
   const rvx = ball.vel.x - car.vel.x;
   const rvy = ball.vel.y - car.vel.y;
   const rvz = ball.vel.z - car.vel.z;
@@ -698,6 +894,11 @@ function collideCarBall(car: Car, ball: Ball, fx: FxPulse[]) {
     car.vel.z -= nz * 2.4;
     if (vn < -2.2) {
       fx.push({ kind: "hit", mag: Math.min(1, -vn / 18), x: ball.pos.x, y: ball.pos.y, z: ball.pos.z });
+    }
+    const goalSign = car.team === 0 ? 1 : -1;
+    if (wasGoalThreat && goalSign * ball.vel.z < -2.5 && w.simTime >= w.epicSaveUntil) {
+      w.epicSave = { name: car.name, team: car.team };
+      w.epicSaveUntil = w.simTime + 1.6;
     }
   }
 }
@@ -889,6 +1090,7 @@ function checkGoal(w: World): 0 | 1 | null {
 export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOnly?: boolean; lsdCap?: number }) {
   if (w.phase === "menu" || w.phase === "over") return;
   w.simTime += dt;
+  if (w.epicSave && w.simTime >= w.epicSaveUntil) w.epicSave = null;
   w.fx.length = 0;
   const lsdCap = opts?.lsdCap ?? 1;
   if (opts?.carsOnly) {
@@ -921,11 +1123,12 @@ export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOn
   }
 
   if (w.phase === "play") {
+    if (w.practice === "goals" && tickGoalLab(w)) return;
     if (w.overtime && w.phaseT >= OVERTIME_MAX_SECONDS) {
       w.phase = "over";
       return;
     }
-    if (!w.overtime) {
+    if (!w.overtime && w.practice === "match") {
       w.clock = Math.max(0, w.clock - dt);
       if (w.clock <= 0) {
         if (w.score[0] !== w.score[1]) {
@@ -951,10 +1154,14 @@ export function stepWorld(w: World, player: Actions, dt: number, opts?: { carsOn
   for (let i = 0; i < w.cars.length; i++) {
     for (let j = i + 1; j < w.cars.length; j++) collideCars(w.cars[i], w.cars[j]);
   }
-  for (const car of w.cars) collideCarBall(car, w.ball, w.fx);
+  for (const car of w.cars) collideCarBall(w, car, w.ball, w.fx);
   collectPads(w, dt);
 
   const scored = checkGoal(w);
+  if (scored !== null && resolveGoalLabGoal(w, scored)) {
+    w.fx.push({ kind: "goal", mag: scored === 0 ? 1 : 0, x: w.ball.pos.x, y: w.ball.pos.y, z: w.ball.pos.z });
+    return;
+  }
   if (scored !== null) {
     w.score[scored] += 1;
     w.lastGoal = scored;
@@ -984,7 +1191,13 @@ export function snapshot(w: World): Snapshot {
     speed: p ? Math.hypot(p.vel.x, p.vel.y, p.vel.z) : 0,
     phase: w.phase,
     practice: w.practice,
+    practiceAttempt: w.practiceState?.attempt ?? null,
+    practiceResult: w.practiceState?.result ?? null,
+    practiceDeadline: w.practiceState?.deadline ?? null,
+    practiceRemaining:
+      w.practiceState?.result === "active" ? Math.max(0, w.practiceState.deadline - w.simTime) : null,
     lastGoal: w.lastGoal,
+    epicSave: w.epicSave ? { ...w.epicSave } : null,
     countdown: w.countdown,
     onGround: p?.onGround ?? true,
     yaw: p?.yaw ?? 0,
@@ -1003,6 +1216,18 @@ export function snapshot(w: World): Snapshot {
   };
 }
 
+export function returnToMenu(w: World) {
+  w.practice = "match";
+  w.practiceState = null;
+  w.phase = "menu";
+  w.phaseT = 0;
+  w.countdown = 3;
+  w.overtime = false;
+  w.epicSave = null;
+  w.epicSaveUntil = 0;
+  resetKickoff(w);
+}
+
 export function startMatch(w: World, roster?: RosterEntry[], options: AiMatchOptions = {}) {
   if (options.difficulty) w.aiDifficulty = options.difficulty;
   if (options.aiSeed !== undefined) w.aiSeed = options.aiSeed >>> 0;
@@ -1012,7 +1237,10 @@ export function startMatch(w: World, roster?: RosterEntry[], options: AiMatchOpt
   w.clock = MATCH_SECONDS;
   w.overtime = false;
   w.lastGoal = null;
+  w.epicSave = null;
+  w.epicSaveUntil = 0;
   w.practice = "match";
+  w.practiceState = null;
   resetKickoff(w, roster ?? w.roster);
   w.phase = "countdown";
   w.phaseT = 0;
@@ -1024,7 +1252,10 @@ export function startPractice(w: World, mode: Exclude<PracticeMode, "match">, ro
   w.clock = MATCH_SECONDS;
   w.overtime = false;
   w.lastGoal = null;
+  w.epicSave = null;
+  w.epicSaveUntil = 0;
   w.practice = mode;
+  w.practiceState = null;
   w.roster = nextRoster;
   w.cars = carsFromRoster(nextRoster);
   w.simTime = 0;
@@ -1033,7 +1264,12 @@ export function startPractice(w: World, mode: Exclude<PracticeMode, "match">, ro
   w.phaseT = 0;
   w.countdown = 0;
   w.lastNudgeBits = "PRACTICE";
-  const player = w.cars.find((c) => c.isPlayer) ?? w.cars[0];
+  if (mode === "goals") {
+    resetGoalLabAttempt(w, 0);
+    return;
+  }
+  const player = localPracticeCar(w);
+  if (!player) return;
   if (mode === "aerial") {
     player.pos = { x: 0, y: 4.4, z: 21 };
     player.vel = { x: 0, y: 2.8, z: -7.5 };
@@ -1043,15 +1279,6 @@ export function startPractice(w: World, mode: Exclude<PracticeMode, "match">, ro
     player.boost = 100;
     w.ball.pos = { x: 0, y: 7.2, z: 4 };
     w.ball.vel = { x: 0, y: 0, z: -3.2 };
-  } else {
-    player.pos = { x: 0, y: CAR_H, z: 25 };
-    player.vel = { x: 0, y: 0, z: 0 };
-    player.yaw = 0;
-    player.onGround = true;
-    player.jumpsLeft = 2;
-    player.boost = 100;
-    w.ball.pos = { x: 0, y: BALL_R + 0.05, z: 5 };
-    w.ball.vel = { x: 0, y: 0, z: -2 };
   }
   for (const car of w.cars) {
     if (car !== player) {
@@ -1084,6 +1311,7 @@ export type HostWire = {
   phase: Phase;
   countdown: number;
   lastGoal: 0 | 1 | null;
+  epicSave: { name: string; team: 0 | 1 } | null;
   lastNudgeBits: string;
 };
 
@@ -1129,6 +1357,7 @@ export function applyHostWire(w: World, host: HostWire) {
   w.phase = host.phase;
   w.countdown = host.countdown;
   w.lastGoal = host.lastGoal;
+  w.epicSave = host.epicSave ? { ...host.epicSave } : null;
   w.lastNudgeBits = host.lastNudgeBits;
 }
 
@@ -1141,6 +1370,7 @@ export function hostWireFrom(w: World): HostWire {
     phase: w.phase,
     countdown: w.countdown,
     lastGoal: w.lastGoal,
+    epicSave: w.epicSave ? { ...w.epicSave } : null,
     lastNudgeBits: w.lastNudgeBits,
   };
 }

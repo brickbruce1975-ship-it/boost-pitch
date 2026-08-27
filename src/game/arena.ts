@@ -52,6 +52,23 @@ function skyTexture() {
   return tex;
 }
 
+function fenceGeometry(width: number, height: number, spacing = 3) {
+  const pos: number[] = [];
+  const columns = Math.ceil(width / spacing);
+  const rows = Math.ceil(height / spacing);
+  for (let i = 0; i <= columns; i++) {
+    const x = -width / 2 + (i / columns) * width;
+    pos.push(x, 0, 0, x, height, 0);
+  }
+  for (let j = 0; j <= rows; j++) {
+    const y = (j / rows) * height;
+    pos.push(-width / 2, y, 0, width / 2, y, 0);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return geo;
+}
+
 function netGeometry(w: number, h: number, d: number) {
   const pos: number[] = [];
   const cols = 10;
@@ -71,7 +88,7 @@ function netGeometry(w: number, h: number, d: number) {
 }
 
 export function makeArena(scene: THREE.Scene) {
-  const { halfW, halfL, wallH, goalHalfW, goalH, goalDepth } = FIELD;
+  const { halfW, halfL, wallH, goalHalfW, goalH, goalDepth, fenceHeight, fenceClimbHeight, fenceClimbRun } = FIELD;
 
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(220, 24, 16),
@@ -110,6 +127,48 @@ export function makeArena(scene: THREE.Scene) {
     w.position.set(x, wallH / 2, 0);
     w.rotation.y = Math.PI / 2;
     scene.add(w);
+  }
+
+  const fenceMat = new THREE.LineBasicMaterial({ color: 0x71e9ff, transparent: true, opacity: 0.32 });
+  const fenceSides = [
+    { x: -halfW - 0.03, z: 0, ry: Math.PI / 2 },
+    { x: halfW + 0.03, z: 0, ry: Math.PI / 2 },
+  ];
+  for (const side of fenceSides) {
+    const fence = new THREE.LineSegments(fenceGeometry(halfL * 2, fenceHeight), fenceMat);
+    fence.position.set(side.x, fenceHeight / 2, side.z);
+    fence.rotation.y = side.ry;
+    scene.add(fence);
+  }
+  for (const z of [-halfL - 0.03, halfL + 0.03]) {
+    const fence = new THREE.LineSegments(fenceGeometry(halfW * 2, fenceHeight), fenceMat);
+    fence.position.set(0, fenceHeight / 2, z);
+    scene.add(fence);
+  }
+
+  const climbRailMat = new THREE.MeshStandardMaterial({
+    color: 0x6fe8ef,
+    emissive: 0x1a7980,
+    emissiveIntensity: 0.55,
+    metalness: 0.75,
+    roughness: 0.22,
+  });
+  for (const x of [-halfW, halfW]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, halfL * 2), climbRailMat);
+    rail.position.set(x, fenceClimbHeight, 0);
+    scene.add(rail);
+  }
+  for (const z of [-halfL, halfL]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2, 0.18, 0.18), climbRailMat);
+    rail.position.set(0, fenceClimbHeight, z);
+    scene.add(rail);
+  }
+  const approachMat = new THREE.MeshStandardMaterial({ color: 0x193941, transparent: true, opacity: 0.35, roughness: 0.7 });
+  const sideApproach = new THREE.BoxGeometry(fenceClimbRun, 0.08, halfL * 2);
+  for (const x of [-halfW + fenceClimbRun / 2, halfW - fenceClimbRun / 2]) {
+    const strip = new THREE.Mesh(sideApproach, approachMat);
+    strip.position.set(x, 0.045, 0);
+    scene.add(strip);
   }
 
   const makeEnd = (z: number, cyanSide: boolean) => {

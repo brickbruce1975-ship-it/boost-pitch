@@ -10,6 +10,7 @@ import { assignTeams, type CarWire, type HostWire } from "@/game/sim";
 import { useP2PRoom, type PeerInfo } from "@/lib/multiplayer";
 import { OrbitSkyline } from "@/components/OrbitSkyline";
 import { OrbitRadio } from "@/components/OrbitRadio";
+import { GoalLabAttemptHud, GoalLabPracticeMenu, PracticeSessionSummary } from "@/components/GoalLabPracticeUI";
 import { startAlbum, toggleMute, toggleMusic } from "@/game/orbitMusic";
 
 function fmtClock(s: Snapshot) {
@@ -71,7 +72,12 @@ export function GameView() {
     speed: 0,
     phase: "menu",
     practice: "match",
+    practiceAttempt: null,
+    practiceResult: null,
+    practiceDeadline: null,
+    practiceRemaining: null,
     lastGoal: null,
+    epicSave: null,
     countdown: 3,
     onGround: true,
     yaw: 0,
@@ -137,6 +143,22 @@ export function GameView() {
     startAlbum();
     if (engineRef.current) engineRef.current.play();
     else pendingPlay.current = true;
+  }
+
+  function startGoalLab() {
+    netRef.current.role = "solo";
+    netRef.current.localName = name.trim() || BRICK_BRUCE.name;
+    netRef.current.localLivery = livery;
+    startAlbum();
+    engineRef.current?.practice("goals");
+  }
+
+  function startAerialLab() {
+    netRef.current.role = "solo";
+    netRef.current.localName = name.trim() || BRICK_BRUCE.name;
+    netRef.current.localLivery = livery;
+    startAlbum();
+    engineRef.current?.practice("aerial");
   }
 
   useEffect(() => {
@@ -207,16 +229,19 @@ export function GameView() {
         </ul>
       )}
 
-      {snap.phase === "play" && snap.practice !== "match" && (
-        <div className="pointer-events-none absolute top-24 left-1/2 -translate-x-1/2 rounded-full border border-cyan/30 bg-ink/65 px-4 py-2 text-center backdrop-blur-sm">
-          <p className="font-display text-xs font-bold tracking-[0.28em] text-cyan uppercase">
-            {snap.practice === "aerial" ? "Aerial Lab" : "Goal Lab"}
-          </p>
-          <p className="mt-0.5 text-[11px] text-muted">
-            {snap.practice === "aerial" ? "Use Space + Shift to meet the floating target" : "Drive through the ball and finish in the amber net"}
-          </p>
+      {snap.phase === "play" && snap.practice === "aerial" && (
+        <div className="pointer-events-none absolute top-24 left-1/2 -translate-x-1/2 border border-cyan/30 bg-ink/75 px-4 py-3 text-center backdrop-blur-sm">
+          <p className="font-display text-xs font-bold tracking-[0.28em] text-cyan uppercase">Aerial Lab</p>
+          <p className="mt-0.5 text-[11px] text-muted">Use Space + Shift to meet the floating target</p>
         </div>
       )}
+
+      <GoalLabAttemptHud snapshot={snap} />
+      <PracticeSessionSummary
+        snapshot={snap}
+        onRetry={startGoalLab}
+        onExit={() => engineRef.current?.returnToMenu()}
+      />
 
       {snap.phase === "play" && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 w-56 -translate-x-1/2 sm:bottom-8 sm:w-72">
@@ -289,6 +314,17 @@ export function GameView() {
             </p>
             <p className="mt-2 font-display text-[11px] tracking-[0.3em] text-muted uppercase">
               Kickoff sample {snap.lastNudgeBits}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {snap.epicSave && snap.phase === "play" && (
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
+          <div className="bp-pop border border-cyan/55 bg-ink/82 px-7 py-4 text-center backdrop-blur-sm">
+            <p className="font-display text-4xl font-bold tracking-[0.2em] text-cyan uppercase">Epic Save</p>
+            <p className="mt-1 font-display text-xs tracking-[0.28em] text-muted uppercase">
+              {snap.epicSave.name} · {snap.epicSave.team === 0 ? "Cyan defense" : "Amber defense"}
             </p>
           </div>
         </div>
@@ -403,23 +439,16 @@ export function GameView() {
                 </button>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={() => engineRef.current?.practice("aerial")}
-                className="rounded-md border border-cyan/35 bg-cyan/10 px-3 py-2 text-left font-display text-xs font-bold tracking-widest text-cyan uppercase hover:bg-cyan/20"
+                onClick={startAerialLab}
+                className="border border-cyan/35 bg-cyan/10 px-4 py-4 text-left font-display text-xs font-bold tracking-widest text-cyan uppercase hover:bg-cyan/20"
               >
                 Aerial lab
                 <span className="mt-1 block font-sans text-[10px] font-normal normal-case tracking-normal text-muted">Floating target + full boost</span>
               </button>
-              <button
-                type="button"
-                onClick={() => engineRef.current?.practice("goals")}
-                className="rounded-md border border-amber/35 bg-amber/10 px-3 py-2 text-left font-display text-xs font-bold tracking-widest text-amber uppercase hover:bg-amber/20"
-              >
-                Goal lab
-                <span className="mt-1 block font-sans text-[10px] font-normal normal-case tracking-normal text-muted">Fast reset + target net</span>
-              </button>
+              <GoalLabPracticeMenu onStart={startGoalLab} />
             </div>
             <p className="mt-4 text-[11px] leading-relaxed text-muted">
               Casual lobby only — friends you invite. Peers learn each other's IPs. Not for ranked play.
