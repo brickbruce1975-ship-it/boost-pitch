@@ -100,9 +100,10 @@ export function OrbitRadio({ compact = false }: { compact?: boolean }) {
           {music.muted ? "Unmute" : "Mute"}
         </button>
       </div>
-      {music.missing ? (
-        <p className="mt-2 text-[11px] text-muted">Local masters unavailable — open the official album to listen.</p>
-      ) : null}
+      <div className="mt-2 min-h-8" aria-live="polite">
+        {music.missing ? <p className="text-[11px] text-muted">Local masters unavailable — open the official album to listen.</p> : null}
+        {music.needsGesture && !music.playing ? <p className="text-[11px] text-muted">Tap Play album to unlock sound.</p> : null}
+      </div>
       <a
         href={ORBIT_SPOTIFY_URL}
         target="_blank"
@@ -111,9 +112,6 @@ export function OrbitRadio({ compact = false }: { compact?: boolean }) {
       >
         Open Brick Bruce on Spotify
       </a>
-      {music.needsGesture && !music.playing ? (
-        <p className="mt-2 text-[11px] text-muted">Tap Play album to unlock sound.</p>
-      ) : null}
       <ol className="mt-3 space-y-0.5">
         {ORBIT_TRACKS.map((t, i) => {
           const active = music.id === t.id;

@@ -199,9 +199,9 @@ export function GameView() {
           <span className="font-display text-3xl font-bold tabular-nums text-amber">{snap.score[1]}</span>
           <span className="ml-2 font-display text-lg tracking-widest text-line">{fmtClock(snap)}</span>
         </div>
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex min-h-8 min-w-[72px] items-center justify-end gap-2">
           {isPending ? (
-            <div className="h-8 w-8 animate-pulse rounded-full bg-raised" />
+            <div className="h-8 w-8 animate-pulse rounded-full bg-raised" aria-label="Loading account" />
           ) : user ? (
             <SignedIn>
               <UserButton />

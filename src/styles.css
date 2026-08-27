@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 600;
+  font-display: optional;
+  src: url("/fonts/rajdhani-600-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url("/fonts/rajdhani-700-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: optional;
+  src: url("/fonts/source-sans-3-latin.woff2") format("woff2");
+}
+
 @theme {
   --color-ink: #10202a;
   --color-surface: #183541;
